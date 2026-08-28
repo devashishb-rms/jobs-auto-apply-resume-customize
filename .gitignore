@@ -133,7 +133,7 @@ dmypy.json
 
 # Project specific
 config.yaml
-profile/
+/profile/
 cookies.wellfound.json
 cookies.uplers.json
 cookies.naukri.json
@@ -170,6 +170,9 @@ data/resume_text.cache.txt
 # AWS deployment secrets — SSH private key, RDP password, and instance-specific
 # identifiers. None of this belongs in version control, ever.
 aws-deploy/
+
+# Claude Code local state — agent worktrees, local settings/permissions.
+.claude/
 config.docker.yaml
 config.vm.yaml
 resume_variants.db
