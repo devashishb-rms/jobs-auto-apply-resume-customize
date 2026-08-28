@@ -475,6 +475,11 @@ class ResilienceConfig(JsonSchemaMixin):
     # for why this project doesn't build a full latency-tracking store in this pass).
     default_reply_latency_seconds: int = 120
     wait_poll_max_seconds: int = 120
+    # Reserved, not yet consumed: apply_runner.py's WAIT_AND_POLL currently does
+    # one bounded asyncio.sleep(wait_poll_max_seconds) rather than a real re-check
+    # loop (a page re-check across an await boundary risks acting on a stale
+    # Playwright page reference — see apply_runner.py's _apply_decision comment).
+    # This knob is for a future true polling implementation, not dead by oversight.
     wait_poll_interval_seconds: int = 5
     # Circuit breaker (§B2, formalizing the existing informal pattern).
     circuit_breaker_window_minutes: int = 30
@@ -949,6 +954,20 @@ def _resilience_config(data: dict[str, Any]) -> ResilienceConfig:
 
 
 def load_config(path: Path) -> AppConfig:
+    """Load and parse a single config file into an AppConfig.
+
+    Known deviation from SDA §A10 (layered base+overlay config): not
+    implemented. This loads exactly one flat file — the three separate
+    deployment configs (config.yaml, config.docker.yaml, config.vm.yaml) that
+    motivated §A10 in the first place still exist as hand-maintained,
+    fully-duplicated files. The Phase 5 implementation report flagged this
+    explicitly as a deferred item (the implementation prompt's own fallback
+    allowed adding new keys to the existing dataclass pattern instead, which
+    is what happened here), but it wasn't annotated in-code until this
+    comment — added after a follow-up SDA-conformance review flagged the
+    omission. Implementing real base+overlay merging remains the recommended
+    next step to actually close SDA Annexure §B1.
+    """
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"Invalid config file: {path}")

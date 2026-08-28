@@ -35,6 +35,10 @@ class Signals:
     time_of_day_in_active_hours: bool
     historical_reply_latency_p50: float
     platform_recent_failure_rate: float
+    # config.resilience.human_recent_activity_threshold_seconds, passed through
+    # rather than read from config inside should_proceed — keeps this function
+    # pure (no config/I/O access), consistent with the module's stated contract.
+    human_recent_activity_threshold_seconds: float = 300.0
     # Static resolvability table result (challenge_type_resolvability) is
     # derived directly from event.type in should_proceed, not carried as a
     # separate signal field — it's a pure function of the event, not an
@@ -71,7 +75,10 @@ def should_proceed(event: BlockingEvent, signals: Signals) -> Decision:
     if event.type in BlockingEventType.HUMAN_ONLY:
         # inherently human-only — never blind-retry against these (this IS the
         # bot-detection signature the user is worried about)
-        if signals.human_recent_activity_seconds < 300 and signals.time_of_day_in_active_hours:
+        if (
+            signals.human_recent_activity_seconds < signals.human_recent_activity_threshold_seconds
+            and signals.time_of_day_in_active_hours
+        ):
             return Decision(
                 action=Action.WAIT_AND_POLL,
                 timeout_seconds=min(120.0, 3 * signals.historical_reply_latency_p50),

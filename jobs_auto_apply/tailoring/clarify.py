@@ -22,6 +22,11 @@ machinery would duplicate infrastructure for a path the SDA's own cost model
 (§A4.4) shows is ~1% of applications — flagged explicitly as a possible
 follow-up (a real bounded wait, reusing pending_questions' group/reply
 routing) rather than silently scoped out.
+
+Consequently ``config.tailoring.clarify_timeout_seconds`` is defined and
+schema'd but not yet consumed — it's reserved for that future bounded-wait
+implementation, not dead by oversight. ``max_clarify_questions`` *is* wired
+(see ``find_unresolved_requirements``'s ``max_questions`` param).
 """
 
 from __future__ import annotations
@@ -52,12 +57,14 @@ _UNRESOLVABLE_PATTERNS: dict[str, re.Pattern] = {
 }
 
 
-def find_unresolved_requirements(structured_jd: StructuredJD, jd_text: str, facts: ResumeFacts) -> list[str]:
+def find_unresolved_requirements(
+    structured_jd: StructuredJD, jd_text: str, facts: ResumeFacts, *, max_questions: int = 2
+) -> list[str]:
     found: list[str] = []
     for label, pattern in _UNRESOLVABLE_PATTERNS.items():
         if pattern.search(jd_text):
             found.append(label)
-    return found[:2]  # cap at 2 per résumé (§A4.1 Tier 3)
+    return found[:max_questions]  # §A4.1 Tier 3 — config.tailoring.max_clarify_questions
 
 
 def notify_unresolved(config: AppConfig, job: JobListing, questions: list[str]) -> None:

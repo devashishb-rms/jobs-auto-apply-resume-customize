@@ -252,7 +252,9 @@ def _get_or_tailor_resume_inner(job: JobListing, config: AppConfig) -> TailoredR
                 tier = "tier1"
 
     # Tier 3 — flag (not block on) unresolved requirements the fact base can't answer.
-    questions = clarify.find_unresolved_requirements(structured_jd, job.description, facts)
+    questions = clarify.find_unresolved_requirements(
+        structured_jd, job.description, facts, max_questions=config.tailoring.max_clarify_questions
+    )
     if questions:
         clarify.notify_unresolved(config, job, questions)
 

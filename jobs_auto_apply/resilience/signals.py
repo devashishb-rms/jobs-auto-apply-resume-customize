@@ -79,4 +79,5 @@ def collect_signals(
         time_of_day_in_active_hours=_time_of_day_in_active_hours(config),
         historical_reply_latency_p50=float(config.resilience.default_reply_latency_seconds),
         platform_recent_failure_rate=failure_rate,
+        human_recent_activity_threshold_seconds=float(config.resilience.human_recent_activity_threshold_seconds),
     )
