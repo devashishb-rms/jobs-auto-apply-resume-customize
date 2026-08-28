@@ -54,6 +54,29 @@ def _post(token: str, method: str, params: dict[str, Any] | None, timeout: int) 
         return json.loads(resp.read().decode("utf-8"))
 
 
+def send_notification(config: Any, text: str, *, timeout: int = 15) -> bool:
+    """Best-effort, fire-and-forget Telegram message using existing plumbing.
+
+    Used by the resilience engine's NOTIFY_AND_DEFER decision (§A5.3) and the
+    tailoring subsystem's clarify.py — both need a one-shot "tell the user
+    something" send, not the full interactive ask/reply session TelegramClient
+    provides. Reuses the same low-level ``_post``/sendMessage call rather than
+    building a second notification mechanism. Never raises — a notification
+    failure must never block or fail an apply run.
+    """
+    token = str(getattr(config.telegram, "bot_token", "") or "").strip()
+    chat_id = str(getattr(config.telegram, "chat_id", "") or "").strip()
+    if not token or not chat_id:
+        logger.debug("Telegram notification skipped (not configured): %s", text[:80])
+        return False
+    try:
+        _post(token, "sendMessage", {"chat_id": chat_id, "text": text}, timeout)
+        return True
+    except Exception as exc:
+        logger.warning("Telegram notification failed: %s", exc)
+        return False
+
+
 class TelegramClient:
     # Telegram exposes which message a reply quotes (``reply_to_message``), so the
     # pending-question flow can route out-of-order replies to the right question

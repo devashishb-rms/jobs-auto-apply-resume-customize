@@ -264,6 +264,20 @@ class ApplicationConfig(JsonSchemaMixin):
     enrich_workers: int = 4
     pipeline_apply: bool = True
     platform_delays: PlatformDelaysConfig = field(default_factory=PlatformDelaysConfig)
+    # --- v3 feature flags (SDA §A13 phased rollout) — both OFF by default so
+    # existing v2 behavior (static résumé, flat retry) is unchanged until the
+    # user explicitly reviews and flips these. ---
+    # Resume Tailoring Subsystem (§A4). When false, the apply flow never touches
+    # jobs_auto_apply/tailoring/ at all.
+    resume_tailoring_enabled: bool = False
+    # When tailoring is enabled: true = generate+validate a tailored résumé and
+    # log what would have been uploaded, but still upload the existing static
+    # resume.pdf (risk-free review mode, SDA §A13 Phase 2). Only set false once
+    # you've reviewed shadow-mode output and trust it to actually swap the file.
+    resume_tailoring_shadow_mode: bool = True
+    # Adaptive Human-Intervention Signal Engine (§A5). When false, apply_runner's
+    # original flat apply_retries/retry_backoff_ms behavior is unchanged.
+    adaptive_retry_enabled: bool = False
 
 
 @dataclass
@@ -399,6 +413,57 @@ class WorkdayConfig(JsonSchemaMixin):
 
 
 @dataclass
+class TailoringConfig(JsonSchemaMixin):
+    """Resume Tailoring Subsystem knobs (SDA §A4, §A8). No effect unless
+    application.resume_tailoring_enabled is true."""
+
+    # Tier 0: cosine-similarity floor above which an existing variant is reused
+    # verbatim instead of re-tailoring (§A4.1).
+    reuse_threshold: float = 0.86
+    # Tier 3: bounded wait for a Telegram reply to a clarifying question before
+    # falling back to the safe default (omit the unresolved claim).
+    clarify_timeout_seconds: int = 600
+    max_clarify_questions: int = 2
+    # §A4.2 step 6: bounded auto-repair loops before falling back to the base résumé.
+    max_ats_repair_loops: int = 2
+    # §A4.3: target must-have keyword coverage before accepting a tailored résumé.
+    min_keyword_coverage: float = 0.70
+    # Which local Ollama model Tier 2 uses. Empty = reuse llm.model (job-answers) —
+    # see engine.py module docstring for why this project defaults to reuse
+    # rather than requiring a new Modelfile.resume-tailor to be built first.
+    ollama_model: str = ""
+    variants_dir: str = "data/resume_variants"
+    variants_db: str = "data/resume_variants.db"
+    cost_ledger_db: str = "data/cost_ledger.db"
+    # Underlying embeddings model — must match llm.embeddings_model (reuse the
+    # one instance already loaded for answer-memory, per §A4.1; not user-configurable
+    # separately on purpose to guarantee "zero new embeddings model").
+
+
+@dataclass
+class ResilienceConfig(JsonSchemaMixin):
+    """Adaptive Human-Intervention Signal Engine knobs (SDA §A5). No effect
+    unless application.adaptive_retry_enabled is true."""
+
+    # Active hours window (local time, 24h) used for signals.time_of_day_in_active_hours.
+    active_hours_start: int = 11
+    active_hours_end: int = 22
+    # Below this, human_recent_activity_seconds is treated as "plausibly at the
+    # keyboard right now" per §A5.3's WAIT_AND_POLL branch.
+    human_recent_activity_threshold_seconds: int = 300
+    # Used when no real reply-latency history exists yet (see signals.py docstring
+    # for why this project doesn't build a full latency-tracking store in this pass).
+    default_reply_latency_seconds: int = 120
+    wait_poll_max_seconds: int = 120
+    wait_poll_interval_seconds: int = 5
+    # Circuit breaker (§B2, formalizing the existing informal pattern).
+    circuit_breaker_window_minutes: int = 30
+    circuit_breaker_failure_rate_threshold: float = 0.5
+    circuit_breaker_min_attempts: int = 5
+    circuit_breaker_cooldown_minutes: int = 30
+
+
+@dataclass
 class AppConfig(JsonSchemaMixin):
     user: UserConfig
     resume: ResumeConfig
@@ -422,6 +487,8 @@ class AppConfig(JsonSchemaMixin):
     state: StateConfig
     paths: PathsConfig
     answers: AnswersPolicyConfig
+    tailoring: TailoringConfig = field(default_factory=TailoringConfig)
+    resilience: ResilienceConfig = field(default_factory=ResilienceConfig)
 
     def __post_init__(self) -> None:
         # base_dir is not part of the YAML config, it's derived from the config file path
@@ -478,6 +545,18 @@ class AppConfig(JsonSchemaMixin):
     @property
     def memory_corrections_path(self) -> Path:
         return self.base_dir / self.paths.memory_corrections
+
+    @property
+    def resume_variants_dir(self) -> Path:
+        return self.base_dir / self.tailoring.variants_dir
+
+    @property
+    def resume_variants_db_path(self) -> Path:
+        return self.base_dir / self.tailoring.variants_db
+
+    @property
+    def cost_ledger_db_path(self) -> Path:
+        return self.base_dir / self.tailoring.cost_ledger_db
 
     @property
     def whatsapp_profile_path(self) -> Path:
@@ -803,6 +882,35 @@ def _telegram_config(data: dict[str, Any]) -> TelegramConfig:
     )
 
 
+def _tailoring_config(data: dict[str, Any]) -> TailoringConfig:
+    return TailoringConfig(
+        reuse_threshold=float(data.get("reuse_threshold", 0.86)),
+        clarify_timeout_seconds=int(data.get("clarify_timeout_seconds", 600)),
+        max_clarify_questions=int(data.get("max_clarify_questions", 2)),
+        max_ats_repair_loops=int(data.get("max_ats_repair_loops", 2)),
+        min_keyword_coverage=float(data.get("min_keyword_coverage", 0.70)),
+        ollama_model=str(data.get("ollama_model", "")),
+        variants_dir=str(data.get("variants_dir", "data/resume_variants")),
+        variants_db=str(data.get("variants_db", "data/resume_variants.db")),
+        cost_ledger_db=str(data.get("cost_ledger_db", "data/cost_ledger.db")),
+    )
+
+
+def _resilience_config(data: dict[str, Any]) -> ResilienceConfig:
+    return ResilienceConfig(
+        active_hours_start=int(data.get("active_hours_start", 11)),
+        active_hours_end=int(data.get("active_hours_end", 22)),
+        human_recent_activity_threshold_seconds=int(data.get("human_recent_activity_threshold_seconds", 300)),
+        default_reply_latency_seconds=int(data.get("default_reply_latency_seconds", 120)),
+        wait_poll_max_seconds=int(data.get("wait_poll_max_seconds", 120)),
+        wait_poll_interval_seconds=int(data.get("wait_poll_interval_seconds", 5)),
+        circuit_breaker_window_minutes=int(data.get("circuit_breaker_window_minutes", 30)),
+        circuit_breaker_failure_rate_threshold=float(data.get("circuit_breaker_failure_rate_threshold", 0.5)),
+        circuit_breaker_min_attempts=int(data.get("circuit_breaker_min_attempts", 5)),
+        circuit_breaker_cooldown_minutes=int(data.get("circuit_breaker_cooldown_minutes", 30)),
+    )
+
+
 def load_config(path: Path) -> AppConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
@@ -939,6 +1047,9 @@ def load_config(path: Path) -> AppConfig:
             enrich_workers=int(application.get("enrich_workers", 4)),
             pipeline_apply=bool(application.get("pipeline_apply", True)),
             platform_delays=_platform_delays(application.get("platform_delays", {})),
+            resume_tailoring_enabled=bool(application.get("resume_tailoring_enabled", False)),
+            resume_tailoring_shadow_mode=bool(application.get("resume_tailoring_shadow_mode", True)),
+            adaptive_retry_enabled=bool(application.get("adaptive_retry_enabled", False)),
         ),
         browser=BrowserConfig(
             headless=bool(browser.get("headless", False)),
@@ -962,6 +1073,8 @@ def load_config(path: Path) -> AppConfig:
         ),
         paths=paths,
         answers=answers_policy,
+        tailoring=_tailoring_config(_section(raw, "tailoring")),
+        resilience=_resilience_config(_section(raw, "resilience")),
     )
     # Set base_dir explicitly
     config.base_dir = base_dir
