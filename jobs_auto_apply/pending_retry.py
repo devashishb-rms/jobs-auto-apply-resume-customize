@@ -5,7 +5,7 @@ import logging
 
 from playwright.async_api import Error as PlaywrightError
 
-from .browser import cutshort_session, hirist_session, naukri_session
+from .browser import cutshort_session, hirist_session, indeed_session, naukri_session
 from .config import AppConfig
 from .pending_job_ref import PendingJobRef, job_listing_from_ref
 from .utils import job_key, load_applied_jobs
@@ -61,6 +61,7 @@ async def retry_pending_jobs(config: AppConfig, job_refs: list[PendingJobRef]) -
 
     from .cutshort.apply import apply_batch as cutshort_apply_batch
     from .hirist.apply import apply_batch as hirist_apply_batch
+    from .indeed.apply import apply_batch as indeed_apply_batch
     from .naukri.apply import apply_batch as naukri_apply_batch
 
     applied_ids = load_applied_jobs(config.applied_jobs_path, include_deferred=False)
@@ -103,6 +104,17 @@ async def retry_pending_jobs(config: AppConfig, job_refs: list[PendingJobRef]) -
             platform_label="Cutshort",
             session_factory=cutshort_session,
             apply_batch=cutshort_apply_batch,
+            jobs=jobs,
+        )
+
+    indeed_refs = by_source.get("indeed", [])
+    if indeed_refs:
+        jobs = [job_listing_from_ref(ref) for ref in indeed_refs]
+        total += await _apply_with_session_retries(
+            config,
+            platform_label="Indeed",
+            session_factory=indeed_session,
+            apply_batch=indeed_apply_batch,
             jobs=jobs,
         )
 

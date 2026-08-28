@@ -255,6 +255,31 @@ cutshort:
     keywords: ["backend developer", "python"]
     cities: []               # empty = India-wide; e.g. ["Bengaluru", "Pune"]
 
+indeed:
+  # This integration is unverified against a real logged-in Indeed session (see
+  # indeed/*.py module docstrings) — left disabled by default so copying this
+  # example file doesn't put it live. Flip to true only after you've reviewed
+  # the selectors and tried a first `python main.py login --platform indeed`.
+  enabled: false
+  cookies_file: "cookies.indeed.json"
+  filters:
+    # Indeed serves country-specific subdomains (in.indeed.com for India,
+    # www.indeed.com for the US, uk.indeed.com, etc). Defaults to in.indeed.com
+    # since this tool is India-focused; override for another country's site.
+    domain: "in.indeed.com"
+    max_pages: 2
+    # Prefer pasting direct Indeed search-results URLs (most reliable):
+    search_urls:
+      - "https://in.indeed.com/jobs?q=solution+architect&l=India&fromage=7&sort=date"
+    # Or keyword/location search when search_urls is empty (maps to Indeed's q= / l=):
+    keywords: "solution architect"
+    locations: ["India"]     # empty = country-wide; multiple = one search feed per location
+    max_job_age_days: 7      # maps to Indeed's fromage= filter
+    sort: "date"             # date (newest first) | relevance
+    # Restrict to native "Indeed Apply" listings, skipping "apply on company site" postings
+    # (detected from the "Easily apply" badge on each job card — see indeed/search.py).
+    easy_apply_only: true
+
 application:
   jobs_per_platform: 0          # 0 = unlimited
   max_jobs_per_run: 0
@@ -267,6 +292,7 @@ application:
   hirist_apply_workers: 5
   instahyre_apply_workers: 3
   cutshort_apply_workers: 3
+  indeed_apply_workers: 5
   parallel_platforms: false    # one platform at a time on 16GB unified memory
   pipeline_apply: true         # Naukri + Wellfound: scroll while workers apply
   platform_delays:

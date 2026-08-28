@@ -17,7 +17,7 @@ from .page_load import ensure_page_ready
 logger = logging.getLogger("job_apply")
 
 # Cookie-session platforms safe to run in parallel (each gets its own Chromium instance).
-PARALLEL_COOKIE_PLATFORMS = frozenset({"naukri", "hirist", "instahyre", "cutshort"})
+PARALLEL_COOKIE_PLATFORMS = frozenset({"naukri", "hirist", "instahyre", "cutshort", "indeed"})
 
 
 def _use_chrome_profile(config: AppConfig, platform: str) -> bool:
@@ -500,5 +500,26 @@ async def cutshort_session(config: AppConfig) -> AsyncIterator[tuple[Browser | N
         inject_cookies_fn=inject_cookies,
         verify_fn=verify_logged_in,
         platform_label="Cutshort",
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def indeed_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    import functools
+
+    from .indeed.auth import indeed_login_url, indeed_origin, inject_cookies, verify_logged_in
+
+    domain = getattr(config.indeed.filters, "domain", None)
+
+    async with browser_session(
+        config,
+        platform="indeed",
+        origin=indeed_origin(domain),
+        login_url=indeed_login_url(domain),
+        cookies_path=config.cookies_path("indeed"),
+        inject_cookies_fn=functools.partial(inject_cookies, domain=domain),
+        verify_fn=functools.partial(verify_logged_in, domain=domain),
+        platform_label="Indeed",
     ) as session:
         yield session

@@ -1,6 +1,6 @@
 # Jobs Auto Apply
 
-Automatically search, filter, and apply to jobs across **Wellfound**, **Uplers**, **Naukri**, **Hirist**, **Instahyre**, and **Cutshort** — including company ATS forms (Greenhouse, Lever, Workday, etc.) and recruiter screening questions, which are answered from your profile facts with an optional local LLM.
+Automatically search, filter, and apply to jobs across **Wellfound**, **Uplers**, **Naukri**, **Hirist**, **Instahyre**, **Cutshort**, and **Indeed** — including company ATS forms (Greenhouse, Lever, Workday, etc.) and recruiter screening questions, which are answered from your profile facts with an optional local LLM.
 
 Everything is **domain-agnostic**: the role filters, skill mappings, answer engine, and platform queries are all driven by your config/profile, so the same tool can target backend, frontend, data, design, sales, or any other role family — nothing is hard-coded to a particular profession.
 
@@ -12,6 +12,7 @@ Everything is **domain-agnostic**: the role filters, skill mappings, answer engi
 | Hirist | One-click apply + screening form on hirist.tech |
 | Instahyre | One-click apply on the opportunities feed |
 | Cutshort | Apply on cutshort.io (resume upload + screening questions) |
+| Indeed | Native "Indeed Apply" wizard, or redirects to the company's own ATS |
 
 ## How it works
 
@@ -56,6 +57,7 @@ python main.py run --platform naukri
 python main.py run --platform hirist
 python main.py run --platform instahyre
 python main.py run --platform cutshort
+python main.py run --platform indeed
 ```
 
 Requires **Python 3.10+**. By default it reuses your **Chrome profile** — log into the job sites in Chrome first (Google sign-in works).
@@ -84,7 +86,7 @@ The entry point is `main.py`, which loads `.env` (if present) and invokes the Cl
 | `chrome-profiles` | List the Chrome profiles available on your machine. |
 | `export-cookies-help` | Print cookie-export instructions (legacy `auth.method: cookies`). |
 
-Common options: `--config <path>` (default `config.yaml`), `--platform {wellfound,uplers,naukri,hirist,instahyre,cutshort,all}` (default `all`), `--verbose`.
+Common options: `--config <path>` (default `config.yaml`), `--platform {wellfound,uplers,naukri,hirist,instahyre,cutshort,indeed,all}` (default `all`), `--verbose`.
 
 ```bash
 python main.py chrome-profiles
@@ -169,7 +171,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 | `paths` | Locations of `application_facts`, `user_memory.json`, `pending_questions.json`, etc. |
 | `answers` | Notice/join threshold and default experience chip options. |
 | `resume` | Resume PDF path. |
-| `wellfound`, `uplers`, `naukri`, `hirist`, `instahyre`, `cutshort` | Per-platform `enabled` flag + filters. |
+| `wellfound`, `uplers`, `naukri`, `hirist`, `instahyre`, `cutshort`, `indeed` | Per-platform `enabled` flag + filters. |
 | `application` | Run-wide behaviour: dry run, caps, delays, `parallel_platforms`, review gating. |
 | `llm` | Local LLM / RAG settings (models, confidence thresholds, FAISS). |
 | `telegram` | Send pending questions to a Telegram bot and read replies (official Bot API; recommended). |
@@ -183,6 +185,7 @@ Copy `config.example.yaml` to `config.yaml` and edit. Top-level sections:
 - **Hirist** — `keywords` (list), `cities`, `experience` (`0-2`, `2-5`, `5-10`), `experience_min`/`experience_max`, or fully-formed `search_urls` (paste Hirist search links to drive the exact queries)
 - **Instahyre** — `job_functions`, `locations`, `experience_years`, `company_size`, plus a `feeds` list (see below) and optional mapping overrides (`default_skills`, `job_function_aliases`, `skill_chip_values`, `skill_type_queries`)
 - **Cutshort** — `keywords` (list), `cities`, `max_pages`, or fully-formed `search_urls` (e.g. `https://cutshort.io/jobs/backend-developer-jobs`)
+- **Indeed** — `keywords`, `locations` (list, one search feed per location), `max_job_age_days`, `sort`, `easy_apply_only`, `max_pages`, or fully-formed `search_urls`. **Best-effort**: the URL scheme (`q`/`l`/`start`/`fromage`/`sort`) and job-card selectors follow Indeed's long-documented public conventions, but could not be verified against a live DOM — every request (even anonymous, logged-out search pages) hit a Cloudflare "Verify you are human" checkpoint during development. Re-check `jobs_auto_apply/indeed/search.py` after your first real run.
 - **Wellfound / Uplers** — keywords, skills, locations, roles
 
 #### Instahyre feeds
@@ -394,9 +397,10 @@ naukri: { enabled: true }
 hirist: { enabled: true }
 instahyre: { enabled: true }
 cutshort: { enabled: true }
+indeed: { enabled: true }
 
 application:
-  parallel_platforms: true   # naukri + hirist + instahyre + cutshort concurrently
+  parallel_platforms: true   # naukri + hirist + instahyre + cutshort + indeed concurrently
 ```
 
 ```bash
@@ -481,7 +485,8 @@ jobs-auto-apply/
     ├── uplers/                  # search.py / apply.py
     ├── naukri/                  # search.py / apply.py / questions.py / resume sync
     ├── hirist/                  # search.py / apply.py / questions.py
-    └── instahyre/               # search.py / apply.py / feeds.py
+    ├── instahyre/               # search.py / apply.py / feeds.py
+    └── indeed/                  # search.py / apply.py / questions.py / resume.py
 ```
 
 ## Troubleshooting

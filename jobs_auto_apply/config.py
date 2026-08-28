@@ -128,6 +128,24 @@ class HiristFiltersConfig(JsonSchemaMixin):
 
 
 @dataclass
+class IndeedFiltersConfig(JsonSchemaMixin):
+    # Indeed serves country-specific subdomains (www.indeed.com for the US,
+    # in.indeed.com for India, uk.indeed.com, etc). This tool is India-focused,
+    # so the default is in.indeed.com — override for another country's site.
+    domain: str = "in.indeed.com"
+    search_urls: list[str] = field(default_factory=list)
+    keywords: str = ""  # maps to Indeed's `q` search param — set your role/skills in config.yaml
+    locations: list[str] = field(default_factory=list)  # maps to `l`; multiple = one feed per location
+    max_job_age_days: int | None = None  # `fromage` query param (e.g. 7 → posted within last 7 days)
+    sort: str = "date"  # date (newest first) | relevance
+    # Restrict to native "Indeed Apply" listings only (skip "apply on company site" postings).
+    # Detected client-side from the "Easily apply" badge on each job card — Indeed does not
+    # expose a documented, stable URL filter code for this, so it isn't done via search_urls.
+    easy_apply_only: bool = True
+    max_pages: int = 1  # SRP pages per search feed (start=0,10,20,… — apply page 1, then page 2, …)
+
+
+@dataclass
 class CutshortFiltersConfig(JsonSchemaMixin):
     search_urls: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)  # e.g. ["backend developer", "python"]
@@ -172,6 +190,7 @@ class PlatformConfig(JsonSchemaMixin):
         | HiristFiltersConfig
         | InstahyreFiltersConfig
         | CutshortFiltersConfig
+        | IndeedFiltersConfig
     )
 
 
@@ -248,6 +267,7 @@ class ApplicationConfig(JsonSchemaMixin):
     hirist_apply_workers: int = 10
     instahyre_apply_workers: int = 5  # parallel Instahyre tabs (collect+apply path)
     cutshort_apply_workers: int = 3
+    indeed_apply_workers: int = 5
     parallel_platforms: bool = False  # run cookie platforms concurrently (separate browsers)
     skip_external_ats: bool = True
     dry_run: bool = False
@@ -477,6 +497,7 @@ class AppConfig(JsonSchemaMixin):
     hirist: PlatformConfig
     instahyre: PlatformConfig
     cutshort: PlatformConfig
+    indeed: PlatformConfig
     workday: WorkdayConfig
     llm: LLMConfig
     whatsapp: WhatsAppConfig
@@ -600,6 +621,7 @@ class AppConfig(JsonSchemaMixin):
             "hirist": self.hirist.cookies_file,
             "instahyre": self.instahyre.cookies_file,
             "cutshort": self.cutshort.cookies_file,
+            "indeed": self.indeed.cookies_file,
         }
         if platform not in mapping:
             raise ValueError(f"Unknown platform: {platform}")
@@ -696,6 +718,21 @@ def _cutshort_filters(data: dict[str, Any]) -> CutshortFiltersConfig:
         search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
         keywords=list(kw) if isinstance(kw, list) else [str(kw)] if kw else [],
         cities=list(cities) if isinstance(cities, list) else [],
+        max_pages=int(data.get("max_pages", 1)),
+    )
+
+
+def _indeed_filters(data: dict[str, Any]) -> IndeedFiltersConfig:
+    urls = data.get("search_urls", [])
+    locations = data.get("locations")
+    return IndeedFiltersConfig(
+        domain=str(data.get("domain") or data.get("country") or "in.indeed.com"),
+        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
+        keywords=str(data.get("keywords", "")),
+        locations=list(locations) if isinstance(locations, list) else [],
+        max_job_age_days=data.get("max_job_age_days"),
+        sort=str(data.get("sort", "date")),
+        easy_apply_only=bool(data.get("easy_apply_only", True)),
         max_pages=int(data.get("max_pages", 1)),
     )
 
@@ -981,6 +1018,13 @@ def load_config(path: Path) -> AppConfig:
             filter_fn=_cutshort_filters,
             enabled_default=False,
         )
+        indeed = _platform_config(
+            raw,
+            "indeed",
+            default_cookies="cookies.indeed.json",
+            filter_fn=_indeed_filters,
+            enabled_default=False,
+        )
     else:
         wellfound = _platform_config(
             raw, "wellfound", default_cookies="cookies.wellfound.json", filter_fn=_wellfound_filters
@@ -994,6 +1038,7 @@ def load_config(path: Path) -> AppConfig:
         cutshort = _platform_config(
             raw, "cutshort", default_cookies="cookies.cutshort.json", filter_fn=_cutshort_filters
         )
+        indeed = _platform_config(raw, "indeed", default_cookies="cookies.indeed.json", filter_fn=_indeed_filters)
 
     config = AppConfig(
         user=_user_config(user),
@@ -1015,6 +1060,7 @@ def load_config(path: Path) -> AppConfig:
         hirist=hirist,
         instahyre=instahyre,
         cutshort=cutshort,
+        indeed=indeed,
         workday=workday,
         llm=llm,
         whatsapp=whatsapp,
@@ -1031,6 +1077,7 @@ def load_config(path: Path) -> AppConfig:
             hirist_apply_workers=int(application.get("hirist_apply_workers", 10)),
             instahyre_apply_workers=int(application.get("instahyre_apply_workers", 5)),
             cutshort_apply_workers=int(application.get("cutshort_apply_workers", 3)),
+            indeed_apply_workers=int(application.get("indeed_apply_workers", 5)),
             parallel_platforms=bool(application.get("parallel_platforms", False)),
             skip_external_ats=bool(application.get("skip_external_ats", True)),
             dry_run=bool(application.get("dry_run", False)),

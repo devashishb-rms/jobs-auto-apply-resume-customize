@@ -433,6 +433,11 @@ def _pending_job_id(job: dict[str, Any], source: str, url: str, title: str) -> s
         if len(parts) == 2 and 6 <= len(parts[1]) <= 16 and parts[1].isalnum():
             return parts[1]
         return hashlib.sha1(url.encode()).hexdigest()[:16]
+    if source == "indeed":
+        match = re.search(r"[?&]jk=([a-f0-9]+)", url)
+        if match:
+            return match.group(1)
+        return hashlib.sha1(f"{url}|{title}".encode()).hexdigest()[:16]
     # Unknown/legacy source — fall back to the URL slug (previous behaviour).
     return url.rstrip("/").split("/")[-1] or url
 
