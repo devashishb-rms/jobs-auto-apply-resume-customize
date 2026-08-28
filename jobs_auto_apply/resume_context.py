@@ -36,7 +36,7 @@ class use_resume_path:
         self._path = path
         self._token: contextvars.Token | None = None
 
-    def __enter__(self) -> "use_resume_path":
+    def __enter__(self) -> use_resume_path:
         self._token = _active_resume_path.set(self._path)
         return self
 

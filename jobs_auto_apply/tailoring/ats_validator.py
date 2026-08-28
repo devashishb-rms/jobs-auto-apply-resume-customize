@@ -21,23 +21,7 @@ from ..profile_data import ResumeFacts
 from .jd_extractor import StructuredJD
 
 _NUMBER_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?%?\+?\b")
-# Tech-term-shaped tokens: ALLCAPS acronyms (AWS, RAG, LLM), CamelCase
-# (TensorFlow, PyTorch), or hyphenated/dotted tech words (Node.js, CI/CD).
-_TECH_TOKEN_RE = re.compile(r"\b([A-Z]{2,6}|[A-Z][a-z]+[A-Z][A-Za-z0-9]*|[A-Za-z]+\.[a-z]+)\b")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-
-_COMMON_ACRONYMS_OK_BY_DEFAULT = {
-    "AI",
-    "ML",
-    "API",
-    "SDK",
-    "UI",
-    "UX",
-    "QA",
-    "CI",
-    "CD",
-    "IT",
-}  # generic vocabulary, not fact-specific claims — never worth stripping over
 
 
 @dataclass
@@ -56,18 +40,6 @@ def _fact_numbers(facts: ResumeFacts) -> set[str]:
     return numbers
 
 
-def _fact_skill_tokens(facts: ResumeFacts, core_skills: list[str]) -> set[str]:
-    tokens: set[str] = set()
-    for items in (facts.technical_skills or {}).values():
-        for item in items or []:
-            tokens.update(m.upper() if m.isupper() else m for m in _TECH_TOKEN_RE.findall(str(item)))
-            tokens.add(str(item).strip())
-    for skill in core_skills or []:
-        tokens.add(str(skill).strip())
-        tokens.update(_TECH_TOKEN_RE.findall(str(skill)))
-    return tokens
-
-
 def _fact_employers(facts: ResumeFacts) -> set[str]:
     return {str(role.get("company", "")).strip() for role in facts.experience if role.get("company")}
 
@@ -76,13 +48,24 @@ def strip_fabricated_claims(text: str, facts: ResumeFacts, core_skills: list[str
     """Sentence-level fail-closed fact-check for LLM-generated prose (Tier 2 output).
 
     Numeric claims (percentages, team sizes, budgets) must match a source
-    bullet verbatim; tech-term-shaped tokens must be in the known skill
-    vocabulary; any sentence with an unverifiable numeric claim is dropped.
-    Tier 1 output (deterministic substring injection of already-fact-listed
-    skills) never reaches this function — it cannot fabricate by construction.
+    bullet verbatim, and any company-suffix-shaped phrase (e.g. "... Corp",
+    "... Technologies") must match a real employer; a sentence carrying either
+    kind of unverifiable claim is dropped. Tier 1 output (deterministic
+    substring injection of already-fact-listed skills) never reaches this
+    function — it cannot fabricate by construction.
+
+    A broader "every tech-term-shaped token must be in the skill vocabulary"
+    check was considered and deliberately left out: real business acronyms
+    that legitimately appear in a user's own resume prose (e.g. "GMV", "P&L")
+    aren't necessarily in technical_skills/core_skills, so that check's false-
+    positive rate against genuine content was too high for the vocabulary
+    this module can cheaply build. Numeric + employer verification is the
+    mechanical net; skill claims are covered because Tier 2's prompt only
+    ever asks the LLM to rephrase already-true summary text, and any skill it
+    surfaces must already appear in the JD-keyword list built from the same
+    fact-derived vocabulary in jd_extractor.py.
     """
     fact_numbers = _fact_numbers(facts)
-    skill_tokens = {t.upper() for t in _fact_skill_tokens(facts, core_skills)}
     employers = _fact_employers(facts)
 
     kept: list[str] = []

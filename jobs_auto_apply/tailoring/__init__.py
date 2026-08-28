@@ -7,6 +7,25 @@ clarify) is an implementation detail reached only through ``engine.py``.
 No effect at all unless ``application.resume_tailoring_enabled`` is true —
 importing this package is safe and cheap regardless (no module-level I/O or
 model loading happens on import; models/embeddings load lazily on first use).
+
+Known limitation (found during Phase 3 verification, documented rather than
+silently worked around): ``JobListing.description`` is only populated by
+some platforms *before* this hook runs. Wellfound's direct-apply path runs
+``enrich_jobs_parallel`` (which fetches the JD) before calling
+``wellfound_apply_batch``, so tailoring sees real JD text there. Naukri /
+Hirist / Instahyre / Cutshort's direct-apply paths, however, fetch the JD
+text *inside* their own ``apply_to_job`` (for the existing join-reason/cover-
+letter generation) — i.e. after this hook has already run — so on those
+platforms ``job.description`` is typically still empty when tailoring runs,
+and the pipeline degenerates safely to an ~unchanged Tier-1 pass (no crash,
+no fabrication risk — ``keyword_coverage`` of an empty must-have list is
+defined as 1.0, so it just doesn't do meaningful tailoring). Fixing this
+properly means hoisting each of those four platforms' JD-fetch earlier in
+their apply flow, which touches DOM-navigation-timing-sensitive code this
+implementation deliberately did not touch (the non-negotiable constraint is
+"no rewrite of existing DOM logic"). Flagged as the most valuable next step
+for whoever reviews shadow-mode output — see ``jd_text_available`` in each
+``data/resume_variants/shadow_log.jsonl`` line.
 """
 
 from __future__ import annotations
@@ -46,6 +65,13 @@ def _log_shadow_event(config: AppConfig, job: JobListing, result: TailoredResume
         "ats_keyword_coverage": result.ats_keyword_coverage,
         "would_upload": (not shadow) and result.pdf_path is not None,
         "issues": result.issues,
+        # See this module's docstring / README's "known limitation" note: some
+        # platforms only populate job.description during their own apply flow
+        # (after this hook has already run), so tailoring can see an empty JD
+        # on those platforms today. A near-100% coverage with no real JD text
+        # is the visible symptom — surfaced explicitly here rather than left
+        # to look like a real result when reviewing shadow_log.jsonl.
+        "jd_text_available": bool((job.description or "").strip()),
     }
     try:
         path = _shadow_log_path(config)
@@ -109,4 +135,4 @@ async def tailor_for_job(job: JobListing, config: AppConfig):
         yield
 
 
-__all__ = ["tailor_for_job", "get_or_tailor_resume"]
+__all__ = ["get_or_tailor_resume", "tailor_for_job"]

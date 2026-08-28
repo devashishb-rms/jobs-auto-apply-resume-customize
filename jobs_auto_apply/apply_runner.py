@@ -284,14 +284,16 @@ async def _apply_decision(decision, event, job, config, prefix, *, breaker, send
         return _DecisionOutcome(retry=True, result=False)
 
     if decision.action == Action.WAIT_AND_POLL:
+        wait_seconds = min(decision.timeout_seconds, config.resilience.wait_poll_max_seconds)
         logger.info(
             "%sBlocking event %s for %s @ %s — human plausibly available, waiting up to %.0fs",
             prefix,
             event.type,
             job.title,
             job.company,
+            wait_seconds,
         )
-        await asyncio.sleep(min(decision.timeout_seconds, config.resilience.wait_poll_max_seconds))
+        await asyncio.sleep(wait_seconds)
         # A short synchronous wait is the best we can safely do without a page
         # re-check loop that risks acting on a stale page reference across an
         # await boundary; the job is deferred either way if the challenge is
