@@ -13,6 +13,7 @@
     "hirist",
     "instahyre",
     "cutshort",
+    "indeed",
     "workday",
     "llm",
     "whatsapp",
@@ -61,6 +62,9 @@
     "cutshort": {
       "$ref": "#/definitions/PlatformConfig"
     },
+    "indeed": {
+      "$ref": "#/definitions/PlatformConfig"
+    },
     "workday": {
       "$ref": "#/definitions/WorkdayConfig"
     },
@@ -92,7 +96,7 @@
       "$ref": "#/definitions/AnswersPolicyConfig"
     }
   },
-  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', wellfound: 'PlatformConfig', uplers: 'PlatformConfig', naukri: 'PlatformConfig', hirist: 'PlatformConfig', instahyre: 'PlatformConfig', cutshort: 'PlatformConfig', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig')",
+  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', wellfound: 'PlatformConfig', uplers: 'PlatformConfig', naukri: 'PlatformConfig', hirist: 'PlatformConfig', instahyre: 'PlatformConfig', cutshort: 'PlatformConfig', indeed: 'PlatformConfig', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig')",
   "$schema": "http://json-schema.org/draft-06/schema#",
   "definitions": {
     "UserConfig": {
@@ -314,11 +318,14 @@
             },
             {
               "$ref": "#/definitions/CutshortFiltersConfig"
+            },
+            {
+              "$ref": "#/definitions/IndeedFiltersConfig"
             }
           ]
         }
       },
-      "description": "PlatformConfig(enabled: 'bool', cookies_file: 'str', filters: 'WellfoundFiltersConfig | UplersFiltersConfig | NaukriFiltersConfig | HiristFiltersConfig | InstahyreFiltersConfig | CutshortFiltersConfig')"
+      "description": "PlatformConfig(enabled: 'bool', cookies_file: 'str', filters: 'WellfoundFiltersConfig | UplersFiltersConfig | NaukriFiltersConfig | HiristFiltersConfig | InstahyreFiltersConfig | CutshortFiltersConfig | IndeedFiltersConfig')"
     },
     "WellfoundFiltersConfig": {
       "type": "object",
@@ -615,6 +622,45 @@
         }
       },
       "description": "CutshortFiltersConfig(search_urls: 'list[str]' = <factory>, keywords: 'list[str]' = <factory>, cities: 'list[str]' = <factory>, max_pages: 'int' = 1)"
+    },
+    "IndeedFiltersConfig": {
+      "type": "object",
+      "properties": {
+        "search_urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "keywords": {
+          "type": "string",
+          "default": ""
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "max_job_age_days": {
+          "type": "integer"
+        },
+        "sort": {
+          "type": "string",
+          "default": "date"
+        },
+        "easy_apply_only": {
+          "type": "boolean",
+          "default": true
+        },
+        "max_pages": {
+          "type": "integer",
+          "default": 1
+        }
+      },
+      "description": "IndeedFiltersConfig(search_urls: 'list[str]' = <factory>, keywords: 'str' = '', locations: 'list[str]' = <factory>, max_job_age_days: 'int | None' = None, sort: 'str' = 'date', easy_apply_only: 'bool' = True, max_pages: 'int' = 1)"
     },
     "WorkdayConfig": {
       "type": "object",
@@ -946,6 +992,10 @@
           "type": "integer",
           "default": 3
         },
+        "indeed_apply_workers": {
+          "type": "integer",
+          "default": 5
+        },
         "parallel_platforms": {
           "type": "boolean",
           "default": false
@@ -1018,7 +1068,7 @@
           }
         }
       },
-      "description": "ApplicationConfig(jobs_per_platform: 'int' = 0, max_jobs_per_run: 'int' = 0, require_review: 'bool' = False, review_dir: 'str' = 'data/review', delay_seconds_min: 'int' = 0, delay_seconds_max: 'int' = 0, apply_workers: 'int' = 10, naukri_apply_workers: 'int' = 10, hirist_apply_workers: 'int' = 10, instahyre_apply_workers: 'int' = 5, cutshort_apply_workers: 'int' = 3, parallel_platforms: 'bool' = False, skip_external_ats: 'bool' = True, dry_run: 'bool' = False, follow_external_from_wellfound: 'bool' = False, skip_location_blocked: 'bool' = True, skip_ineligible_salary: 'bool' = True, min_inr_salary_lpa: 'float' = 25.0, apply_retries: 'int' = 1, retry_backoff_ms: 'int' = 1500, interactive_questions: 'bool' = True, confirm_new_answers: 'bool' = True, rag_answer_questions: 'bool' = True, one_job_per_company: 'bool' = True, enrich_workers: 'int' = 4, pipeline_apply: 'bool' = True, platform_delays: 'PlatformDelaysConfig' = <factory>)"
+      "description": "ApplicationConfig(jobs_per_platform: 'int' = 0, max_jobs_per_run: 'int' = 0, require_review: 'bool' = False, review_dir: 'str' = 'data/review', delay_seconds_min: 'int' = 0, delay_seconds_max: 'int' = 0, apply_workers: 'int' = 10, naukri_apply_workers: 'int' = 10, hirist_apply_workers: 'int' = 10, instahyre_apply_workers: 'int' = 5, cutshort_apply_workers: 'int' = 3, indeed_apply_workers: 'int' = 5, parallel_platforms: 'bool' = False, skip_external_ats: 'bool' = True, dry_run: 'bool' = False, follow_external_from_wellfound: 'bool' = False, skip_location_blocked: 'bool' = True, skip_ineligible_salary: 'bool' = True, min_inr_salary_lpa: 'float' = 25.0, apply_retries: 'int' = 1, retry_backoff_ms: 'int' = 1500, interactive_questions: 'bool' = True, confirm_new_answers: 'bool' = True, rag_answer_questions: 'bool' = True, one_job_per_company: 'bool' = True, enrich_workers: 'int' = 4, pipeline_apply: 'bool' = True, platform_delays: 'PlatformDelaysConfig' = <factory>)"
     },
     "PlatformDelaysConfig": {
       "type": "object",

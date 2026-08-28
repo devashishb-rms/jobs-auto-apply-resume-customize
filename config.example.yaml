@@ -255,6 +255,23 @@ cutshort:
     keywords: ["backend developer", "python"]
     cities: []               # empty = India-wide; e.g. ["Bengaluru", "Pune"]
 
+indeed:
+  enabled: true
+  cookies_file: "cookies.indeed.json"
+  filters:
+    max_pages: 2
+    # Prefer pasting direct Indeed search-results URLs (most reliable):
+    search_urls:
+      - "https://www.indeed.com/jobs?q=solution+architect&l=India&fromage=7&sort=date"
+    # Or keyword/location search when search_urls is empty (maps to Indeed's q= / l=):
+    keywords: "solution architect"
+    locations: ["India"]     # empty = country-wide; multiple = one search feed per location
+    max_job_age_days: 7      # maps to Indeed's fromage= filter
+    sort: "date"             # date (newest first) | relevance
+    # Restrict to native "Indeed Apply" listings, skipping "apply on company site" postings
+    # (detected from the "Easily apply" badge on each job card — see indeed/search.py).
+    easy_apply_only: true
+
 application:
   jobs_per_platform: 0          # 0 = unlimited
   max_jobs_per_run: 0
@@ -267,6 +284,7 @@ application:
   hirist_apply_workers: 5
   instahyre_apply_workers: 3
   cutshort_apply_workers: 3
+  indeed_apply_workers: 5
   parallel_platforms: false    # one platform at a time on 16GB unified memory
   pipeline_apply: true         # Naukri + Wellfound: scroll while workers apply
   platform_delays:

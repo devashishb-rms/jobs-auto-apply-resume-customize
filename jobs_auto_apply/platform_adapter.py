@@ -216,6 +216,9 @@ def _build_registry() -> dict[str, PlatformAdapter]:
     from .hirist.apply import apply_batch as hirist_apply_batch
     from .hirist.auth import verify_logged_in as hirist_verify
     from .hirist.search import collect_job_listings as hirist_collect
+    from .indeed.apply import apply_batch as indeed_apply_batch
+    from .indeed.auth import verify_logged_in as indeed_verify
+    from .indeed.search import collect_job_listings as indeed_collect
     from .instahyre.apply import apply_batch as instahyre_apply_batch
     from .instahyre.auth import verify_logged_in as instahyre_verify
     from .instahyre.search import collect_job_listings as instahyre_collect
@@ -234,6 +237,7 @@ def _build_registry() -> dict[str, PlatformAdapter]:
         "hirist": _BaseAdapter("hirist", hirist_collect, hirist_apply_batch, hirist_verify),
         "instahyre": _BaseAdapter("instahyre", instahyre_collect, instahyre_apply_batch, instahyre_verify),
         "cutshort": _BaseAdapter("cutshort", cutshort_collect, cutshort_apply_batch, cutshort_verify),
+        "indeed": _BaseAdapter("indeed", indeed_collect, indeed_apply_batch, indeed_verify),
         "uplers": _BaseAdapter("uplers", uplers_collect, uplers_apply_batch, uplers_verify),
         "wellfound": _WellfoundAdapter("wellfound", wellfound_collect, wellfound_apply_batch, wellfound_verify),
     }

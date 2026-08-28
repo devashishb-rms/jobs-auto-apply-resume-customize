@@ -16,6 +16,7 @@ from .browser import (
     PARALLEL_COOKIE_PLATFORMS,
     cutshort_session,
     hirist_session,
+    indeed_session,
     instahyre_session,
     naukri_session,
     uplers_session,
@@ -26,6 +27,7 @@ from .config import (
     AppConfig,
     CutshortFiltersConfig,
     HiristFiltersConfig,
+    IndeedFiltersConfig,
     InstahyreFiltersConfig,
     NaukriFiltersConfig,
     UplersFiltersConfig,
@@ -46,6 +48,11 @@ from .hirist.search import apply_filters as hirist_apply_filters
 from .hirist.search import collect_from_search_urls as hirist_collect_from_search_urls
 from .hirist.search import collect_job_listings as hirist_collect_jobs
 from .hirist.search import iter_paginated_feed_pages
+from .indeed.apply import apply_batch as indeed_apply_batch
+from .indeed.search import apply_filters as indeed_apply_filters
+from .indeed.search import collect_from_search_urls as indeed_collect_from_search_urls
+from .indeed.search import collect_job_listings as indeed_collect_jobs
+from .indeed.search import iter_paginated_feed_pages as indeed_iter_paginated_feed_pages
 from .instahyre.apply import apply_batch as instahyre_apply_batch
 from .instahyre.apply import apply_from_feeds as instahyre_apply_from_feeds
 from .instahyre.search import apply_filters as instahyre_apply_filters
@@ -126,6 +133,7 @@ PLATFORM_CHOICES = (
     "hirist",
     "instahyre",
     "cutshort",
+    "indeed",
     "all",
 )
 
@@ -136,12 +144,13 @@ PLATFORM_APPLY = {
     "hirist": hirist_apply_batch,
     "instahyre": instahyre_apply_batch,
     "cutshort": cutshort_apply_batch,
+    "indeed": indeed_apply_batch,
 }
 
 
 @click.group()
 def main() -> None:
-    """Auto-apply to jobs on Wellfound, Uplers, Naukri, Hirist, Instahyre, and Cutshort."""
+    """Auto-apply to jobs on Wellfound, Uplers, Naukri, Hirist, Instahyre, Cutshort, and Indeed."""
 
 
 def _enabled_platforms(config: AppConfig, platform: str) -> list[str]:
@@ -152,6 +161,7 @@ def _enabled_platforms(config: AppConfig, platform: str) -> list[str]:
         "hirist": config.hirist.enabled,
         "instahyre": config.instahyre.enabled,
         "cutshort": config.cutshort.enabled,
+        "indeed": config.indeed.enabled,
     }
     if platform == "all":
         return [name for name, enabled in mapping.items() if enabled]
@@ -182,6 +192,7 @@ async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
         ("hirist", _run_hirist),
         ("instahyre", _run_instahyre),
         ("cutshort", _run_cutshort),
+        ("indeed", _run_indeed),
     ]
     selected = [(name, runner) for name, runner in runners if name in targets]
     if not selected:
@@ -201,7 +212,7 @@ async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
         names = ", ".join(name for name, _ in parallel)
         console.print(
             f"[cyan]Running {len(parallel)} platforms in parallel: {names}[/cyan]\n"
-            "[dim]Each uses its own browser + cookies (naukri/hirist/instahyre/cutshort apply workers still apply per site).[/dim]\n"
+            "[dim]Each uses its own browser + cookies (naukri/hirist/instahyre/cutshort/indeed apply workers still apply per site).[/dim]\n"
         )
         results = await asyncio.gather(*[_run_single_platform(name, runner, config) for name, runner in parallel])
         total += sum(results)
@@ -409,7 +420,7 @@ async def _run(config_path: Path, platform: str, verbose: bool) -> None:
         elif platform == "all" and len(targets) > 1 and not config.application.parallel_platforms:
             console.print(
                 f"[cyan]Running {len(targets)} platforms in order: {', '.join(targets)}[/cyan]\n"
-                "[dim]Set application.parallel_platforms: true to run naukri/hirist/instahyre/cutshort together.[/dim]\n"
+                "[dim]Set application.parallel_platforms: true to run naukri/hirist/instahyre/cutshort/indeed together.[/dim]\n"
             )
 
         clear_run_issues()
@@ -1082,6 +1093,7 @@ class _platform_session:
             "hirist": hirist_session,
             "instahyre": instahyre_session,
             "cutshort": cutshort_session,
+            "indeed": indeed_session,
         }
         self._cm = sessions[self.platform](self.config)
         return await self._cm.__aenter__()
@@ -1146,6 +1158,15 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
                 return await cutshort_collect_from_search_urls(page, filters.search_urls, limit)
             await cutshort_apply_filters(page, filters)
             return await cutshort_collect_jobs(page, limit)
+    if platform == "indeed":
+        filters = config.indeed.filters
+        if isinstance(filters, IndeedFiltersConfig):
+            if filters.search_urls:
+                return await indeed_collect_from_search_urls(
+                    page, filters.search_urls, limit, easy_apply_only=filters.easy_apply_only
+                )
+            await indeed_apply_filters(page, filters)
+            return await indeed_collect_jobs(page, limit, easy_apply_only=filters.easy_apply_only)
     return []
 
 
@@ -1431,6 +1452,49 @@ async def _run_cutshort(config: AppConfig, applied_ids: set[str]) -> int:
         )
 
 
+async def _run_indeed(config: AppConfig, applied_ids: set[str]) -> int:
+    filters = config.indeed.filters
+    if not isinstance(filters, IndeedFiltersConfig):
+        return 0
+    max_pages = max(1, filters.max_pages)
+    async with indeed_session(config) as (_, context, page):
+        if not filters.search_urls and max_pages <= 1:
+            limit = scrape_limit(config.application.max_jobs_per_run, multiplier=1)
+            await indeed_apply_filters(page, filters)
+            jobs = await indeed_collect_jobs(page, limit, easy_apply_only=filters.easy_apply_only)
+            return await _apply_list("Indeed", jobs, applied_ids, config, indeed_apply_batch, page, context)
+
+        session_seen: set[str] = set()
+        all_jobs: list[JobListing] = []
+        async for _feed_url, page_num, jobs in indeed_iter_paginated_feed_pages(page, filters, max_pages=max_pages):
+            new_jobs = [j for j in jobs if j.job_id not in session_seen]
+            for job in new_jobs:
+                session_seen.add(job.job_id)
+            if not new_jobs:
+                if page_num > 1:
+                    console.print(f"[dim]Indeed: no new jobs on page {page_num} — next feed/page[/dim]")
+                continue
+            all_jobs.extend(new_jobs)
+            console.print(
+                f"[dim]Indeed: collected {len(new_jobs)} new on page {page_num} ({len(all_jobs)} total)[/dim]"
+            )
+
+        if not all_jobs:
+            console.print("[yellow]No Indeed listings collected.[/yellow]")
+            return 0
+
+        console.print(f"[cyan]Indeed: collected {len(all_jobs)} unique listing(s) — applying in one batch[/cyan]")
+        return await _apply_list(
+            "Indeed",
+            all_jobs,
+            applied_ids,
+            config,
+            indeed_apply_batch,
+            page,
+            context,
+        )
+
+
 async def _apply_list(title, jobs, applied_ids, config, apply_fn, page, context) -> int:
     pending = _pending_jobs(jobs, applied_ids, config.application.max_jobs_per_run, config)
     if not pending:
@@ -1495,6 +1559,7 @@ async def _login(config_path: Path, platform: str) -> None:
         ("hirist", config.hirist.enabled, hirist_session),
         ("instahyre", config.instahyre.enabled, instahyre_session),
         ("cutshort", config.cutshort.enabled, cutshort_session),
+        ("indeed", config.indeed.enabled, indeed_session),
     ]
     for name, enabled, session_fn in sessions:
         if platform in (name, "all") and enabled:
