@@ -291,6 +291,40 @@ application:
   enrich_workers: 1
   dry_run: true
 
+  # --- v3 feature flags (resume tailoring + adaptive retry) — OFF by default.
+  # v2 behavior (static resume.pdf, flat apply_retries) is unchanged until you
+  # flip these on. See README.md's "v3 feature flags" section before enabling. ---
+  resume_tailoring_enabled: false        # turn on the JD-aware resume tailoring subsystem
+  resume_tailoring_shadow_mode: true     # true = tailor+validate+log only, still upload resume.pdf;
+                                          # false = actually upload the tailored PDF (review shadow output first)
+  adaptive_retry_enabled: false          # turn on signal-fused retry/wait/defer instead of flat retry
+
+# Resume Tailoring Subsystem knobs — only matter when application.resume_tailoring_enabled is true.
+tailoring:
+  reuse_threshold: 0.86              # cosine-similarity floor to reuse an existing variant verbatim
+  clarify_timeout_seconds: 600
+  max_clarify_questions: 2
+  max_ats_repair_loops: 2            # bounded bullet-trim passes before falling back to resume.pdf
+  min_keyword_coverage: 0.70         # target must-have JD-keyword coverage before accepting a variant
+  ollama_model: ""                   # empty = reuse llm.model (job-answers) for Tier 2 polish
+  variants_dir: "data/resume_variants"
+  variants_db: "data/resume_variants.db"
+  cost_ledger_db: "data/cost_ledger.db"
+
+# Adaptive Human-Intervention Signal Engine knobs — only matter when
+# application.adaptive_retry_enabled is true.
+resilience:
+  active_hours_start: 11             # local-time window used for "is a human plausibly awake"
+  active_hours_end: 22
+  human_recent_activity_threshold_seconds: 300
+  default_reply_latency_seconds: 120 # used until enough real Telegram-reply history exists
+  wait_poll_max_seconds: 120
+  wait_poll_interval_seconds: 5
+  circuit_breaker_window_minutes: 30
+  circuit_breaker_failure_rate_threshold: 0.5
+  circuit_breaker_min_attempts: 5
+  circuit_breaker_cooldown_minutes: 30
+
 # Ollama local models — run: ./scripts/setup_ollama_models.sh
 llm:
   enabled: true

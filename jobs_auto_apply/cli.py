@@ -1920,5 +1920,20 @@ def memory_cmd(config_path: Path) -> None:
         console.print("Run: [bold]python3 main.py answer-questions --review[/bold]")
 
 
+@main.command("cost-report")
+@click.option(
+    "--config", "config_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), default="config.yaml"
+)
+def cost_report_cmd(config_path: Path) -> None:
+    """Print the LLM call ledger summary (SDA §A7) — total calls, compute
+    time, and estimated cost, by module. Always $0 cloud cost for the
+    default local-only Ollama configuration; the value here is
+    call-count/compute-time observability."""
+    from .cost_ledger import cost_report_text
+
+    config = load_config(config_path)
+    console.print(Panel(cost_report_text(config), title="LLM Cost Ledger"))
+
+
 if __name__ == "__main__":
     main()

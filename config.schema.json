@@ -90,9 +90,38 @@
     },
     "answers": {
       "$ref": "#/definitions/AnswersPolicyConfig"
+    },
+    "tailoring": {
+      "$ref": "#/definitions/TailoringConfig",
+      "default": {
+        "reuse_threshold": 0.86,
+        "clarify_timeout_seconds": 600,
+        "max_clarify_questions": 2,
+        "max_ats_repair_loops": 2,
+        "min_keyword_coverage": 0.7,
+        "ollama_model": "",
+        "variants_dir": "data/resume_variants",
+        "variants_db": "data/resume_variants.db",
+        "cost_ledger_db": "data/cost_ledger.db"
+      }
+    },
+    "resilience": {
+      "$ref": "#/definitions/ResilienceConfig",
+      "default": {
+        "active_hours_start": 11,
+        "active_hours_end": 22,
+        "human_recent_activity_threshold_seconds": 300,
+        "default_reply_latency_seconds": 120,
+        "wait_poll_max_seconds": 120,
+        "wait_poll_interval_seconds": 5,
+        "circuit_breaker_window_minutes": 30,
+        "circuit_breaker_failure_rate_threshold": 0.5,
+        "circuit_breaker_min_attempts": 5,
+        "circuit_breaker_cooldown_minutes": 30
+      }
     }
   },
-  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', wellfound: 'PlatformConfig', uplers: 'PlatformConfig', naukri: 'PlatformConfig', hirist: 'PlatformConfig', instahyre: 'PlatformConfig', cutshort: 'PlatformConfig', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig')",
+  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', wellfound: 'PlatformConfig', uplers: 'PlatformConfig', naukri: 'PlatformConfig', hirist: 'PlatformConfig', instahyre: 'PlatformConfig', cutshort: 'PlatformConfig', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig', tailoring: 'TailoringConfig' = <factory>, resilience: 'ResilienceConfig' = <factory>)",
   "$schema": "http://json-schema.org/draft-06/schema#",
   "definitions": {
     "UserConfig": {
@@ -1016,9 +1045,21 @@
             "naukri_chatbot_step_ms": 400,
             "naukri_chip_poll_ms": 120
           }
+        },
+        "resume_tailoring_enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "resume_tailoring_shadow_mode": {
+          "type": "boolean",
+          "default": true
+        },
+        "adaptive_retry_enabled": {
+          "type": "boolean",
+          "default": false
         }
       },
-      "description": "ApplicationConfig(jobs_per_platform: 'int' = 0, max_jobs_per_run: 'int' = 0, require_review: 'bool' = False, review_dir: 'str' = 'data/review', delay_seconds_min: 'int' = 0, delay_seconds_max: 'int' = 0, apply_workers: 'int' = 10, naukri_apply_workers: 'int' = 10, hirist_apply_workers: 'int' = 10, instahyre_apply_workers: 'int' = 5, cutshort_apply_workers: 'int' = 3, parallel_platforms: 'bool' = False, skip_external_ats: 'bool' = True, dry_run: 'bool' = False, follow_external_from_wellfound: 'bool' = False, skip_location_blocked: 'bool' = True, skip_ineligible_salary: 'bool' = True, min_inr_salary_lpa: 'float' = 25.0, apply_retries: 'int' = 1, retry_backoff_ms: 'int' = 1500, interactive_questions: 'bool' = True, confirm_new_answers: 'bool' = True, rag_answer_questions: 'bool' = True, one_job_per_company: 'bool' = True, enrich_workers: 'int' = 4, pipeline_apply: 'bool' = True, platform_delays: 'PlatformDelaysConfig' = <factory>)"
+      "description": "ApplicationConfig(jobs_per_platform: 'int' = 0, max_jobs_per_run: 'int' = 0, require_review: 'bool' = False, review_dir: 'str' = 'data/review', delay_seconds_min: 'int' = 0, delay_seconds_max: 'int' = 0, apply_workers: 'int' = 10, naukri_apply_workers: 'int' = 10, hirist_apply_workers: 'int' = 10, instahyre_apply_workers: 'int' = 5, cutshort_apply_workers: 'int' = 3, parallel_platforms: 'bool' = False, skip_external_ats: 'bool' = True, dry_run: 'bool' = False, follow_external_from_wellfound: 'bool' = False, skip_location_blocked: 'bool' = True, skip_ineligible_salary: 'bool' = True, min_inr_salary_lpa: 'float' = 25.0, apply_retries: 'int' = 1, retry_backoff_ms: 'int' = 1500, interactive_questions: 'bool' = True, confirm_new_answers: 'bool' = True, rag_answer_questions: 'bool' = True, one_job_per_company: 'bool' = True, enrich_workers: 'int' = 4, pipeline_apply: 'bool' = True, platform_delays: 'PlatformDelaysConfig' = <factory>, resume_tailoring_enabled: 'bool' = False, resume_tailoring_shadow_mode: 'bool' = True, adaptive_retry_enabled: 'bool' = False)"
     },
     "PlatformDelaysConfig": {
       "type": "object",
@@ -1175,6 +1216,94 @@
         }
       },
       "description": "AnswersPolicyConfig(notice_join_threshold_days: 'int' = 15, default_year_chip_options: 'list[str]' = <factory>)"
+    },
+    "TailoringConfig": {
+      "type": "object",
+      "properties": {
+        "reuse_threshold": {
+          "type": "number",
+          "default": 0.86
+        },
+        "clarify_timeout_seconds": {
+          "type": "integer",
+          "default": 600
+        },
+        "max_clarify_questions": {
+          "type": "integer",
+          "default": 2
+        },
+        "max_ats_repair_loops": {
+          "type": "integer",
+          "default": 2
+        },
+        "min_keyword_coverage": {
+          "type": "number",
+          "default": 0.7
+        },
+        "ollama_model": {
+          "type": "string",
+          "default": ""
+        },
+        "variants_dir": {
+          "type": "string",
+          "default": "data/resume_variants"
+        },
+        "variants_db": {
+          "type": "string",
+          "default": "data/resume_variants.db"
+        },
+        "cost_ledger_db": {
+          "type": "string",
+          "default": "data/cost_ledger.db"
+        }
+      },
+      "description": "Resume Tailoring Subsystem knobs (SDA \u00a7A4, \u00a7A8). No effect unless\napplication.resume_tailoring_enabled is true."
+    },
+    "ResilienceConfig": {
+      "type": "object",
+      "properties": {
+        "active_hours_start": {
+          "type": "integer",
+          "default": 11
+        },
+        "active_hours_end": {
+          "type": "integer",
+          "default": 22
+        },
+        "human_recent_activity_threshold_seconds": {
+          "type": "integer",
+          "default": 300
+        },
+        "default_reply_latency_seconds": {
+          "type": "integer",
+          "default": 120
+        },
+        "wait_poll_max_seconds": {
+          "type": "integer",
+          "default": 120
+        },
+        "wait_poll_interval_seconds": {
+          "type": "integer",
+          "default": 5
+        },
+        "circuit_breaker_window_minutes": {
+          "type": "integer",
+          "default": 30
+        },
+        "circuit_breaker_failure_rate_threshold": {
+          "type": "number",
+          "default": 0.5
+        },
+        "circuit_breaker_min_attempts": {
+          "type": "integer",
+          "default": 5
+        },
+        "circuit_breaker_cooldown_minutes": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "description": "Adaptive Human-Intervention Signal Engine knobs (SDA \u00a7A5). No effect\nunless application.adaptive_retry_enabled is true."
     }
   }
 }

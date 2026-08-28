@@ -256,6 +256,69 @@ llm:
 
 On a 16GB Mac, limit Ollama concurrency: `export OLLAMA_NUM_PARALLEL=1` and `export OLLAMA_MAX_LOADED_MODELS=2`. To disable the LLM entirely, set `llm.enabled: false` (factual config/RAG answers still work; unknown questions are deferred).
 
+## v3 feature flags: resume tailoring + adaptive retry
+
+Two additive subsystems ship behind feature flags that default **off** — with
+both off, behavior is identical to the v2 baseline (static `resume.pdf`, flat
+`apply_retries`). See `docs/design/resume-tailoring-sda.md` for the full
+architecture; this section is the quick-start version.
+
+**Resume tailoring** (`application.resume_tailoring_enabled`) generates a
+JD-tailored résumé per application instead of always uploading the same
+static file — a cheap deterministic tier (keyword reorder/injection) runs
+first, a scoped local-Ollama polish pass runs only when that's not enough,
+and every generated claim is mechanically fact-checked against
+`profile/resume_facts.yaml` / `profile/application_facts.yaml` before it can
+reach a rendered PDF (nothing is trusted on the model's word alone). Near-
+duplicate JDs reuse an already-tailored variant instead of re-generating.
+Zero cloud LLM calls — Tier 2 reuses the same local `job-answers` Ollama
+model the answer engine already uses.
+
+Turn it on in **shadow mode** first (the default once enabled):
+
+```yaml
+application:
+  resume_tailoring_enabled: true
+  resume_tailoring_shadow_mode: true   # tailor + validate + log only; resume.pdf is still what's uploaded
+```
+
+```bash
+python main.py run --platform hirist --verbose
+```
+
+Review what it would have uploaded:
+
+```bash
+cat data/resume_variants/shadow_log.jsonl   # one line per job: tier, keyword coverage, issues
+ls data/resume_variants/*.pdf               # inspect the actual generated PDFs
+python main.py cost-report                  # LLM call count / compute time (should stay small)
+```
+
+Once you trust the output, flip `resume_tailoring_shadow_mode: false` to
+actually upload the tailored PDF. A tailoring failure at any stage always
+falls back to the static `resume.pdf` — an apply is never blocked or skipped
+because tailoring failed.
+
+**Adaptive retry** (`application.adaptive_retry_enabled`) replaces the flat
+`apply_retries` count with a signal-fused decision per blocking event
+(CAPTCHA / OTP / Google 2FA / dead session / rate limit / transient DOM
+issue): bot-resolvable issues get a short bounded retry, human-only issues
+are **never** blindly retried (that's the exact behavior that gets accounts
+flagged) — they either wait briefly if you're plausibly at the keyboard
+(Telegram-configured) or notify you and defer the job to the next scheduled
+run. A per-platform circuit breaker also pauses a platform for a cooldown if
+its rolling failure rate spikes, regardless of any single event.
+
+```yaml
+application:
+  adaptive_retry_enabled: true
+telegram:
+  enabled: true   # optional but recommended — NOTIFY_AND_DEFER uses it
+```
+
+Tuning knobs for both live under the new `tailoring:` and `resilience:` config
+sections — see `config.example.yaml` for every key with inline comments.
+
 ## Cover letters
 
 Each application scrapes the **job description** and builds a tailored note:

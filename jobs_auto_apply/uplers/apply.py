@@ -120,11 +120,21 @@ async def apply_batch(
     jobs: list[JobListing],
     config: AppConfig,
 ) -> int:
+    # Uplers applies via external company sites and doesn't route through
+    # apply_runner.run_apply_batch (its per-job loop is bespoke), so the
+    # resume-tailoring shadow/live hook is wired here directly rather than
+    # relying on the shared wiring in apply_runner.py. Adaptive retry (§A5) is
+    # NOT wired here — Uplers has no retry logic today (single attempt per
+    # job, pre-existing v2 behavior), so there is no flat-retry path to
+    # replace; documented as a follow-up if Uplers gains retry logic later.
+    from ..tailoring import tailor_for_job
+
     applied = 0
     for job in jobs:
         try:
-            if await apply_to_uplers_job(page, context, job, config):
-                applied += 1
+            async with tailor_for_job(job, config):
+                if await apply_to_uplers_job(page, context, job, config):
+                    applied += 1
         except Exception:
             logger.exception("Failed Uplers apply for %s", job.url)
 

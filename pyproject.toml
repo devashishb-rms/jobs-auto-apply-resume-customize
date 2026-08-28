@@ -17,6 +17,12 @@ dependencies = [
     # JsonSchemaMixin) — every config load needs this, not just schema
     # generation, so it belongs in core deps rather than dev extras.
     "dataclasses-jsonschema>=2.16.0",
+    # jobs_auto_apply/tailoring/render.py — pure-Python PDF rendering for the
+    # resume-tailoring subsystem (v3, feature-flagged off by default). See
+    # that module's docstring for why reportlab was picked over WeasyPrint
+    # (no system Cairo/Pango dependency to keep every deployment target
+    # working, per Annexure §B6's "a fresh install must actually succeed").
+    "reportlab>=4.0.0",
 ]
 
 [project.optional-dependencies]
