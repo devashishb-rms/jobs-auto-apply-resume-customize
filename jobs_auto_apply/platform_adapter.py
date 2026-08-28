@@ -188,6 +188,27 @@ class _BaseAdapter:
 
 
 @dataclass
+class _IndeedAdapter(_BaseAdapter):
+    async def collect_listings(self, page: Page, config: AppConfig, limit: int) -> list[JobListing]:
+        # §Issue 8: the CLI path (cli.py's _collect_jobs_for_platform / _run_indeed)
+        # always passes easy_apply_only=filters.easy_apply_only explicitly. This
+        # adapter's base collect_listings only forwards the static
+        # ``_collect_kwargs`` frozen at registry build time (empty here, since no
+        # config exists yet at that point) — so left unoverridden, this path
+        # would silently use collect_job_listings' own default (False) instead of
+        # the user's configured value. Read the live config at call time instead,
+        # exactly like the CLI path does, so both paths agree.
+        from .config import IndeedFiltersConfig
+
+        filters = config.indeed.filters
+        kwargs = dict(self._collect_kwargs)
+        if isinstance(filters, IndeedFiltersConfig):
+            kwargs.setdefault("easy_apply_only", filters.easy_apply_only)
+            kwargs.setdefault("domain", filters.domain)
+        return await self._collect_fn(page, limit, **kwargs)
+
+
+@dataclass
 class _WellfoundAdapter(_BaseAdapter):
     async def detect_blocking_event(
         self,
@@ -237,7 +258,7 @@ def _build_registry() -> dict[str, PlatformAdapter]:
         "hirist": _BaseAdapter("hirist", hirist_collect, hirist_apply_batch, hirist_verify),
         "instahyre": _BaseAdapter("instahyre", instahyre_collect, instahyre_apply_batch, instahyre_verify),
         "cutshort": _BaseAdapter("cutshort", cutshort_collect, cutshort_apply_batch, cutshort_verify),
-        "indeed": _BaseAdapter("indeed", indeed_collect, indeed_apply_batch, indeed_verify),
+        "indeed": _IndeedAdapter("indeed", indeed_collect, indeed_apply_batch, indeed_verify),
         "uplers": _BaseAdapter("uplers", uplers_collect, uplers_apply_batch, uplers_verify),
         "wellfound": _WellfoundAdapter("wellfound", wellfound_collect, wellfound_apply_batch, wellfound_verify),
     }

@@ -1163,10 +1163,12 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
         if isinstance(filters, IndeedFiltersConfig):
             if filters.search_urls:
                 return await indeed_collect_from_search_urls(
-                    page, filters.search_urls, limit, easy_apply_only=filters.easy_apply_only
+                    page, filters.search_urls, limit, easy_apply_only=filters.easy_apply_only, domain=filters.domain
                 )
             await indeed_apply_filters(page, filters)
-            return await indeed_collect_jobs(page, limit, easy_apply_only=filters.easy_apply_only)
+            return await indeed_collect_jobs(
+                page, limit, easy_apply_only=filters.easy_apply_only, domain=filters.domain
+            )
     return []
 
 
@@ -1461,7 +1463,9 @@ async def _run_indeed(config: AppConfig, applied_ids: set[str]) -> int:
         if not filters.search_urls and max_pages <= 1:
             limit = scrape_limit(config.application.max_jobs_per_run, multiplier=1)
             await indeed_apply_filters(page, filters)
-            jobs = await indeed_collect_jobs(page, limit, easy_apply_only=filters.easy_apply_only)
+            jobs = await indeed_collect_jobs(
+                page, limit, easy_apply_only=filters.easy_apply_only, domain=filters.domain
+            )
             return await _apply_list("Indeed", jobs, applied_ids, config, indeed_apply_batch, page, context)
 
         session_seen: set[str] = set()

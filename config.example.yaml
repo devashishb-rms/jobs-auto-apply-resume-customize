@@ -256,13 +256,21 @@ cutshort:
     cities: []               # empty = India-wide; e.g. ["Bengaluru", "Pune"]
 
 indeed:
-  enabled: true
+  # This integration is unverified against a real logged-in Indeed session (see
+  # indeed/*.py module docstrings) — left disabled by default so copying this
+  # example file doesn't put it live. Flip to true only after you've reviewed
+  # the selectors and tried a first `python main.py login --platform indeed`.
+  enabled: false
   cookies_file: "cookies.indeed.json"
   filters:
+    # Indeed serves country-specific subdomains (in.indeed.com for India,
+    # www.indeed.com for the US, uk.indeed.com, etc). Defaults to in.indeed.com
+    # since this tool is India-focused; override for another country's site.
+    domain: "in.indeed.com"
     max_pages: 2
     # Prefer pasting direct Indeed search-results URLs (most reliable):
     search_urls:
-      - "https://www.indeed.com/jobs?q=solution+architect&l=India&fromage=7&sort=date"
+      - "https://in.indeed.com/jobs?q=solution+architect&l=India&fromage=7&sort=date"
     # Or keyword/location search when search_urls is empty (maps to Indeed's q= / l=):
     keywords: "solution architect"
     locations: ["India"]     # empty = country-wide; multiple = one search feed per location

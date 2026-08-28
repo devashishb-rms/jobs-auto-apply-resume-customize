@@ -11,20 +11,48 @@ from ..cookies import inject_cookies as _inject
 # OAuth as alternatives, not a hard requirement) — unlike Wellfound/Uplers, it is not
 # Google-OAuth-only, so this follows Hirist's cookie-based session pattern rather than
 # the Chrome-profile pattern.
-INDEED_ORIGIN = "https://www.indeed.com"
-INDEED_LOGIN = f"{INDEED_ORIGIN}/account/login"
+#
+# Indeed serves country-specific subdomains (www.indeed.com for the US,
+# in.indeed.com for India, uk.indeed.com, etc). This tool is India-focused
+# (config.example.yaml ships `l=India`), so the default domain here is
+# in.indeed.com rather than the US site. The actual domain used at runtime is
+# always config-driven — see IndeedFiltersConfig.domain in config.py — these
+# module-level constants are just the fallback default for callers that don't
+# have a config/domain handy.
+DEFAULT_INDEED_DOMAIN = "in.indeed.com"
 
 
-async def inject_cookies(context: BrowserContext, cookies_path: Path) -> None:
+def indeed_origin(domain: str | None = None) -> str:
+    """Build the Indeed origin URL for a given country domain (e.g. 'in.indeed.com')."""
+    return f"https://{(domain or DEFAULT_INDEED_DOMAIN).strip()}"
+
+
+def indeed_login_url(domain: str | None = None) -> str:
+    return f"{indeed_origin(domain)}/account/login"
+
+
+def indeed_cookie_domain(domain: str | None = None) -> str:
+    return f".{(domain or DEFAULT_INDEED_DOMAIN).strip()}"
+
+
+# Back-compat module-level defaults (India domain) for callers that don't thread
+# a config-provided domain through (e.g. import-time usage). Prefer
+# indeed_origin(filters.domain) / indeed_login_url(filters.domain) wherever a
+# config is available.
+INDEED_ORIGIN = indeed_origin()
+INDEED_LOGIN = indeed_login_url()
+
+
+async def inject_cookies(context: BrowserContext, cookies_path: Path, domain: str | None = None) -> None:
     await _inject(
         context,
         cookies_path,
-        default_domain=".indeed.com",
+        default_domain=indeed_cookie_domain(domain),
         required_names=None,
     )
 
 
-async def verify_logged_in(page: Page, expected_name: str) -> bool:
+async def verify_logged_in(page: Page, expected_name: str, domain: str | None = None) -> bool:
     """Best-effort login check.
 
     NOT verified against a real logged-in Indeed session (no test account was
@@ -37,7 +65,8 @@ async def verify_logged_in(page: Page, expected_name: str) -> bool:
     `python main.py login --platform indeed` and adjust the selectors if the
     heuristics below misfire.
     """
-    for url in (f"{INDEED_ORIGIN}/", f"{INDEED_ORIGIN}/jobs", INDEED_ORIGIN):
+    origin = indeed_origin(domain)
+    for url in (f"{origin}/", f"{origin}/jobs", origin):
         await page.goto(url, wait_until="domcontentloaded")
         await page.wait_for_timeout(2500)
         if "/account/login" in page.url.lower():

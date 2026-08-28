@@ -38,7 +38,7 @@ from playwright.async_api import Page
 from ..config import IndeedFiltersConfig
 from ..page_load import goto_settled, scroll_lazy_page, wait_for_page_settled
 from ..utils import JobListing
-from .auth import INDEED_ORIGIN
+from .auth import DEFAULT_INDEED_DOMAIN, indeed_origin
 
 logger = logging.getLogger("job_apply")
 
@@ -61,7 +61,7 @@ def _search_url(filters: IndeedFiltersConfig) -> str:
     if filters.sort and filters.sort.lower() != "relevance":
         params.append(f"sort={quote_plus(filters.sort)}")
     query = "&".join(params)
-    base = f"{INDEED_ORIGIN}/jobs"
+    base = f"{indeed_origin(filters.domain)}/jobs"
     return f"{base}?{query}" if query else base
 
 
@@ -79,6 +79,7 @@ def feed_urls(filters: IndeedFiltersConfig) -> list[str]:
         return list(filters.search_urls)
     if filters.locations and len(filters.locations) > 1:
         urls = []
+        origin = indeed_origin(filters.domain)
         for loc in filters.locations:
             params = []
             if filters.keywords:
@@ -88,7 +89,7 @@ def feed_urls(filters: IndeedFiltersConfig) -> list[str]:
                 params.append(f"fromage={int(filters.max_job_age_days)}")
             if filters.sort and filters.sort.lower() != "relevance":
                 params.append(f"sort={quote_plus(filters.sort)}")
-            urls.append(f"{INDEED_ORIGIN}/jobs?{'&'.join(params)}")
+            urls.append(f"{origin}/jobs?{'&'.join(params)}")
         return urls
     return [_search_url(filters)]
 
@@ -118,7 +119,10 @@ async def _merge_jobs_on_page(
     limit: int,
     *,
     easy_apply_only: bool,
+    origin: str | None = None,
+    stats: dict[str, int] | None = None,
 ) -> int:
+    origin = origin or indeed_origin()
     before = len(jobs)
     cards = page.locator(_JOBCARD_CONTAINER)
     count = await cards.count()
@@ -143,7 +147,11 @@ async def _merge_jobs_on_page(
                 continue
 
             card_text = (await card.inner_text()).strip()
+            if stats is not None:
+                stats["seen"] = stats.get("seen", 0) + 1
             if easy_apply_only and not _EASY_APPLY_TEXT.search(card_text):
+                if stats is not None:
+                    stats["rejected_easy_apply"] = stats.get("rejected_easy_apply", 0) + 1
                 continue
 
             company = ""
@@ -151,7 +159,7 @@ async def _merge_jobs_on_page(
             if await company_loc.count() > 0:
                 company = (await company_loc.first.inner_text()).strip()
 
-            url = f"{INDEED_ORIGIN}/viewjob?jk={jk}" if jk else urljoin(INDEED_ORIGIN, href.split("?")[0])
+            url = f"{origin}/viewjob?jk={jk}" if jk else urljoin(origin, href.split("?")[0])
             job_id = _job_id(jk, url, title)
             jobs.setdefault(
                 job_id,
@@ -169,26 +177,50 @@ async def _merge_jobs_on_page(
     return len(jobs) - before
 
 
+def _warn_if_all_filtered(stats: dict[str, int], kept: int, *, context: str) -> None:
+    """§Issue 5: an easy_apply_only filter that silently rejects every card is a
+    broken-selector symptom, not a genuinely-empty result set — log loudly so a
+    stale badge selector is debuggable on the first run instead of just showing 0
+    jobs with no explanation.
+    """
+    seen = stats.get("seen", 0)
+    if seen > 0 and kept == 0:
+        logger.warning(
+            "Indeed easy_apply_only filter rejected all %d job card(s) on %s — "
+            "the 'Easily apply' badge selector may be stale; check "
+            "indeed/search.py's _EASY_APPLY_TEXT pattern against the live DOM.",
+            seen,
+            context,
+        )
+
+
 async def collect_srp_page(
     page: Page,
     limit: int = 500,
     *,
     easy_apply_only: bool = False,
+    domain: str | None = None,
 ) -> list[JobListing]:
     """Collect jobs on the current SRP page only (no cross-page infinite scroll)."""
+    origin = indeed_origin(domain)
     jobs: dict[str, JobListing] = {}
-    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only)
+    stats: dict[str, int] = {}
+    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only, origin=origin, stats=stats)
     await scroll_lazy_page(page, rounds=2, pause_ms=200)
     await wait_for_page_settled(page, extra_ms=200)
-    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only)
+    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only, origin=origin, stats=stats)
+    if easy_apply_only:
+        _warn_if_all_filtered(stats, len(jobs), context=page.url)
     return list(jobs.values())
 
 
 async def iter_job_listings(
-    page: Page, limit: int, *, easy_apply_only: bool = False
+    page: Page, limit: int, *, easy_apply_only: bool = False, domain: str | None = None
 ) -> AsyncIterator[JobListing]:
+    origin = indeed_origin(domain)
     jobs: dict[str, JobListing] = {}
-    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only)
+    stats: dict[str, int] = {}
+    await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only, origin=origin, stats=stats)
     for listing in list(jobs.values()):
         yield listing
 
@@ -200,7 +232,7 @@ async def iter_job_listings(
         await page.mouse.wheel(0, 2500)
         await scroll_lazy_page(page, rounds=2, pause_ms=200)
         await wait_for_page_settled(page, extra_ms=200)
-        await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only)
+        await _merge_jobs_on_page(page, jobs, limit, easy_apply_only=easy_apply_only, origin=origin, stats=stats)
         added = len(jobs) - len(before)
         if added == 0:
             stable += 1
@@ -214,12 +246,17 @@ async def iter_job_listings(
                 if job_id not in before:
                     yield jobs[job_id]
 
+    if easy_apply_only:
+        _warn_if_all_filtered(stats, len(jobs), context=page.url)
 
-async def collect_job_listings(page: Page, limit: int, *, easy_apply_only: bool = False) -> list[JobListing]:
+
+async def collect_job_listings(
+    page: Page, limit: int, *, easy_apply_only: bool = False, domain: str | None = None
+) -> list[JobListing]:
     """Collect all listings on current page with infinite scroll (legacy single-page scrape)."""
     seen: set[str] = set()
     listings: list[JobListing] = []
-    async for job in iter_job_listings(page, limit, easy_apply_only=easy_apply_only):
+    async for job in iter_job_listings(page, limit, easy_apply_only=easy_apply_only, domain=domain):
         if job.job_id in seen:
             continue
         seen.add(job.job_id)
@@ -231,14 +268,14 @@ async def collect_job_listings(page: Page, limit: int, *, easy_apply_only: bool 
 
 
 async def collect_from_search_urls(
-    page: Page, urls: list[str], limit: int, *, easy_apply_only: bool = False
+    page: Page, urls: list[str], limit: int, *, easy_apply_only: bool = False, domain: str | None = None
 ) -> list[JobListing]:
     merged: dict[str, JobListing] = {}
     per_feed = limit if limit > 0 else 2000
     for feed_idx, url in enumerate(urls):
         logger.info("Indeed feed: %s", url)
         await goto_settled(page, url, timeout_ms=90_000, quick=feed_idx > 0)
-        for job in await collect_srp_page(page, per_feed, easy_apply_only=easy_apply_only):
+        for job in await collect_srp_page(page, per_feed, easy_apply_only=easy_apply_only, domain=domain):
             merged[job.job_id] = job
         if limit > 0 and len(merged) >= limit:
             break
@@ -263,7 +300,7 @@ async def iter_paginated_feed_pages(
             url = _paginated_url(feed_url, page_num)
             logger.info("Indeed feed page %d: %s", page_num, url)
             await goto_settled(page, url, timeout_ms=90_000, quick=page_num > 1)
-            jobs = await collect_srp_page(page, easy_apply_only=filters.easy_apply_only)
+            jobs = await collect_srp_page(page, easy_apply_only=filters.easy_apply_only, domain=filters.domain)
             if not jobs:
                 if page_num > 1:
                     logger.info("Indeed feed ended at page %d (no listings)", page_num)

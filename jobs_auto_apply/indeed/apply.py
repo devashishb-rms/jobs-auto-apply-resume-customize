@@ -40,7 +40,7 @@ from ..config import AppConfig
 from ..page_load import prepare_interactive_page
 from ..pending_questions import queue_unanswered
 from ..utils import JobListing, defer_job_for_run, job_key, save_applied_job
-from .questions import discover_indeed_questions, fill_indeed_questions
+from .questions import QuestionDiscoveryError, discover_indeed_questions, fill_indeed_questions
 from .resume import attach_resume_on_apply_step
 
 logger = logging.getLogger("job_apply")
@@ -123,6 +123,12 @@ async def _click_native_apply(page: Page) -> bool:
     return False
 
 
+async def _has_external_apply_link(page: Page) -> bool:
+    """Cheap, non-clicking check for whether this listing routes to a company site."""
+    link = page.locator("a, button").filter(has_text=_EXTERNAL_APPLY_BTN)
+    return await link.count() > 0
+
+
 async def _external_apply_url(page: Page) -> str | None:
     link = page.locator("a, button").filter(has_text=_EXTERNAL_APPLY_BTN)
     if await link.count() == 0:
@@ -131,6 +137,9 @@ async def _external_apply_url(page: Page) -> str | None:
     if href:
         return href
     # Some listings open the company site in a new tab on click rather than a plain href.
+    # This opens a real popup page just to read its URL — always close it here so it
+    # never leaks, especially with apply_workers running multiple jobs in parallel.
+    popup = None
     try:
         async with page.context.expect_page(timeout=5000) as popup_info:
             await link.first.click(timeout=5000)
@@ -139,6 +148,10 @@ async def _external_apply_url(page: Page) -> str | None:
         return popup.url
     except PlaywrightTimeout:
         return None
+    finally:
+        if popup is not None:
+            with contextlib.suppress(Exception):
+                await popup.close()
 
 
 async def _click_continue(surface: Surface) -> bool:
@@ -218,7 +231,33 @@ async def _run_native_apply_steps(
         if await _surface_success(surface):
             return True
 
-        questions = await discover_indeed_questions(surface)
+        try:
+            questions = await discover_indeed_questions(surface)
+        except QuestionDiscoveryError as exc:
+            # §Issue 3: a discovery *error* is not the same as "no questions on
+            # this step" — surface.evaluate() genuinely failing must never fall
+            # through to _click_continue (whose regex matches "Submit"), or a
+            # real, unanswered screening question could get silently submitted.
+            # Abort this apply attempt and queue it for manual/pending review
+            # instead of guessing the step is clear.
+            from ..technical_failures import record_technical_failure
+
+            record_technical_failure(
+                config.base_dir,
+                job_key=job_key(job.source, job.job_id),
+                source="indeed",
+                title=job.title,
+                company=job.company,
+                url=job.url,
+                reason=f"question discovery failed on step {step + 1} (aborted to avoid a blind submit): {exc}",
+            )
+            logger.warning(
+                "Skipped apply (question discovery failed, step %d): %s — %s",
+                step + 1,
+                job.title,
+                exc,
+            )
+            return None
         answers: dict[str, str] = {}
         if questions:
             logger.info("Indeed: %d question(s) for %s (step %d)", len(questions), job.title, step + 1)
@@ -323,22 +362,28 @@ async def apply_to_job(
         logger.info("[DRY RUN] Would apply on Indeed: %s", job.title)
         return None
 
-    external_url = await _external_apply_url(page)
-    if external_url and config.application.skip_external_ats:
-        logger.info("Skipping external-ATS Indeed listing (skip_external_ats): %s", job.title)
-        return None
-    if external_url:
-        logger.info("Indeed listing routes to company site: %s", external_url)
-        applied = await apply_on_company_site(page, job=job, config=config, url=external_url)
-        if applied:
-            save_applied_job(
-                config.applied_jobs_path,
-                job_key("indeed", job.job_id),
-                {"source": "indeed", "title": job.title, "company": job.company, "url": job.url},
-            )
-            logger.info("Applied on Indeed (company site): %s @ %s", job.title, job.company or "?")
-            return True
-        return False
+    # §Issue 2: check skip_external_ats before ever probing/clicking to open a
+    # popup — the cheap href check is fine either way, but the popup-click
+    # fallback in _external_apply_url should never run when we're just going to
+    # skip the listing anyway (it also matters because apply_workers can run
+    # several of these concurrently, each one an extra orphaned tab).
+    if await _has_external_apply_link(page):
+        if config.application.skip_external_ats:
+            logger.info("Skipping external-ATS Indeed listing (skip_external_ats): %s", job.title)
+            return None
+        external_url = await _external_apply_url(page)
+        if external_url:
+            logger.info("Indeed listing routes to company site: %s", external_url)
+            applied = await apply_on_company_site(page, job=job, config=config, url=external_url)
+            if applied:
+                save_applied_job(
+                    config.applied_jobs_path,
+                    job_key("indeed", job.job_id),
+                    {"source": "indeed", "title": job.title, "company": job.company, "url": job.url},
+                )
+                logger.info("Applied on Indeed (company site): %s @ %s", job.title, job.company or "?")
+                return True
+            return False
 
     if not await _click_native_apply(page):
         if await _already_applied(page):

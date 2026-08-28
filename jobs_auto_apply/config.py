@@ -129,6 +129,10 @@ class HiristFiltersConfig(JsonSchemaMixin):
 
 @dataclass
 class IndeedFiltersConfig(JsonSchemaMixin):
+    # Indeed serves country-specific subdomains (www.indeed.com for the US,
+    # in.indeed.com for India, uk.indeed.com, etc). This tool is India-focused,
+    # so the default is in.indeed.com — override for another country's site.
+    domain: str = "in.indeed.com"
     search_urls: list[str] = field(default_factory=list)
     keywords: str = ""  # maps to Indeed's `q` search param — set your role/skills in config.yaml
     locations: list[str] = field(default_factory=list)  # maps to `l`; multiple = one feed per location
@@ -643,6 +647,7 @@ def _indeed_filters(data: dict[str, Any]) -> IndeedFiltersConfig:
     urls = data.get("search_urls", [])
     locations = data.get("locations")
     return IndeedFiltersConfig(
+        domain=str(data.get("domain") or data.get("country") or "in.indeed.com"),
         search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
         keywords=str(data.get("keywords", "")),
         locations=list(locations) if isinstance(locations, list) else [],

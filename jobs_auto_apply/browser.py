@@ -506,16 +506,20 @@ async def cutshort_session(config: AppConfig) -> AsyncIterator[tuple[Browser | N
 
 @asynccontextmanager
 async def indeed_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .indeed.auth import INDEED_LOGIN, INDEED_ORIGIN, inject_cookies, verify_logged_in
+    import functools
+
+    from .indeed.auth import indeed_login_url, indeed_origin, inject_cookies, verify_logged_in
+
+    domain = getattr(config.indeed.filters, "domain", None)
 
     async with browser_session(
         config,
         platform="indeed",
-        origin=INDEED_ORIGIN,
-        login_url=INDEED_LOGIN,
+        origin=indeed_origin(domain),
+        login_url=indeed_login_url(domain),
         cookies_path=config.cookies_path("indeed"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
+        inject_cookies_fn=functools.partial(inject_cookies, domain=domain),
+        verify_fn=functools.partial(verify_logged_in, domain=domain),
         platform_label="Indeed",
     ) as session:
         yield session

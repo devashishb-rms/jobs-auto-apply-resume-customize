@@ -27,15 +27,31 @@ need it (the same way every other site package in this repo grew its quirks).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from typing import Any
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame, Page
 
 logger = logging.getLogger("job_apply")
 
 Surface = Page | Frame
+
+
+class QuestionDiscoveryError(RuntimeError):
+    """Raised when discover_indeed_questions cannot reliably determine whether the
+    current apply step has employer screening questions.
+
+    This is deliberately distinct from "discovery ran and found zero questions"
+    (a plain ``[]`` return). The caller in indeed/apply.py must never treat a
+    discovery *error* the same as "no questions" — falling through to
+    ``_click_continue`` (whose button regex matches ``Submit``) on a swallowed
+    error could submit an application with real, unanswered screening questions
+    still on the page. See jobs_auto_apply/hirist/questions.py's
+    discover_hirist_questions for the established pattern this follows.
+    """
 
 _GENERIC_NOISE = re.compile(r"^(loading|please wait)$", re.I)
 
@@ -226,11 +242,29 @@ _FILL_JS = """
 
 
 async def discover_indeed_questions(surface: Surface) -> list[dict[str, Any]]:
+    """Discover employer screening-question fields on the current apply step.
+
+    A returned ``[]`` must always mean "genuinely no questions here" — never
+    "discovery failed and we couldn't tell". On the known-transient
+    "Execution context was destroyed" error (the surface navigated/re-rendered
+    mid-evaluate, e.g. right after clicking Continue), retry once. Any other
+    failure is raised as QuestionDiscoveryError so the caller can abort this
+    apply step for manual/pending review instead of silently proceeding to
+    submit — see QuestionDiscoveryError's docstring.
+    """
+    try:
+        return await surface.evaluate(_DISCOVER_JS)
+    except PlaywrightError as exc:
+        if "Execution context was destroyed" not in str(exc):
+            raise QuestionDiscoveryError(f"Indeed question discovery failed: {exc}") from exc
+        logger.debug("Indeed discovery retried after navigation: %s", exc)
+        with contextlib.suppress(Exception):
+            await surface.wait_for_load_state("domcontentloaded", timeout=2000)
+        await surface.wait_for_timeout(250)
     try:
         return await surface.evaluate(_DISCOVER_JS)
     except Exception as exc:
-        logger.debug("Indeed question discovery failed: %s", exc)
-        return []
+        raise QuestionDiscoveryError(f"Indeed question discovery failed after retry: {exc}") from exc
 
 
 async def fill_indeed_questions(
