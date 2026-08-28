@@ -429,6 +429,17 @@ class AppConfig(JsonSchemaMixin):
 
     @property
     def resume_path(self) -> Path:
+        # A per-task override lets the resume-tailoring subsystem (v3, feature-
+        # flagged off by default) swap in a JD-tailored PDF for the duration of a
+        # single apply call without any site package needing to change how it
+        # reads this property. See resume_context.py. No override active (the
+        # default, and the only possibility while resume_tailoring_enabled is
+        # false) means this is byte-for-byte the original behavior.
+        from .resume_context import get_active_resume_override
+
+        override = get_active_resume_override()
+        if override is not None:
+            return override
         return self.base_dir / self.resume.path
 
     @property
