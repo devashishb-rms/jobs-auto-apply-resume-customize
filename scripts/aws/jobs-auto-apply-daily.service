@@ -1,0 +1,18 @@
+[Unit]
+Description=Jobs Auto Apply — daily quota-driven run, self-shuts-down VM when done
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/jobs-auto-apply-main_v2
+Environment=DAILY_QUOTA=100
+Environment=MAX_RUNTIME_SECONDS=14400
+Environment=PASS_INTERVAL_SECONDS=900
+ExecStart=/home/ubuntu/jobs-auto-apply-main_v2/scripts/aws/run_until_quota_then_shutdown.sh
+# No Restart=on-failure — this unit is meant to run exactly once per boot and
+# end by shutting the machine down; a restart loop would fight that shutdown.
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.pre-commit-config.yaml
+
+# Personal data — mounted as volumes, never baked into the image.
+config.yaml
+profile/
+resume.pdf
+data/
+cookies.*.json
+!cookies.*.example.json
+
+plan.md
+tasks.md
+instructions.md

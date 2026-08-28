@@ -1,0 +1,51 @@
+# Default: just the `app` service — fits a 2 vCPU / 2 GB or 2 vCPU / 4 GB VM.
+# The `ollama` service is opt-in (needs its own profile flag) because a 7B model
+# alone needs ~5-6 GB resident RAM — more than a cost-constrained box has to spare.
+# Start without it:      docker compose up -d
+# Start with local LLM:  docker compose --profile llm up -d   (needs a bigger VM, see README note)
+
+services:
+  app:
+    build: .
+    container_name: jobs-auto-apply
+    restart: unless-stopped
+    # Keep the status/health endpoint off the public internet — reach it via an
+    # SSH tunnel (see the deployment guide) rather than exposing 8000 in the VM's
+    # security group.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Read by the Dockerfile's CMD (main.py serve --interval-minutes/--platform
+      # flags) — config path itself isn't env-driven, it just defaults to
+      # config.yaml relative to /app, which is where the volume mount below puts it.
+      JAA_INTERVAL_MINUTES: "120"
+      JAA_PLATFORM: "all"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./profile:/app/profile:ro
+      - ./resume.pdf:/app/resume.pdf:ro
+      - ./data:/app/data
+    # Note: cookies.*.json files are only read when auth.method: cookies in
+    # config.yaml. This deployment uses auth.method: browser (session reuse via
+    # data/sessions/*.json instead), so no cookie files need mounting — add them
+    # back here only if you switch auth.method to "cookies".
+    # Memory ceiling matched to a 2 vCPU / 2 GB VM. Raise to ~3g if you're on the
+    # 4 GB tier and want more headroom for concurrent apply-worker tabs.
+    mem_limit: "1800m"
+    cpus: "2.0"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jobs-auto-apply-ollama
+    restart: unless-stopped
+    profiles: ["llm"]
+    volumes:
+      - ollama_models:/root/.ollama
+    mem_limit: "6g"
+    # Only start this alongside app on a VM with 8 GB+ RAM. On the 2-4 GB cost-
+    # constrained tier, leave llm.enabled: false in config.yaml instead — the
+    # memory/config/RAG answer stages still work; unresolved questions queue to
+    # Telegram rather than being answered by a local model.
+
+volumes:
+  ollama_models:

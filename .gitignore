@@ -1,0 +1,177 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+pdm.lock
+.pdm-python
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Project specific
+config.yaml
+profile/
+cookies.wellfound.json
+cookies.uplers.json
+cookies.naukri.json
+cookies.hirist.json
+cookies.instahyre.json
+resume.pdf
+abhay_resume.pdf
+resumeAbhay_repaired.pdf
+data/applied_jobs.json
+data/run.log
+data/sessions/
+data/whatsapp_profile/
+data/telegram_chat.json
+data/telegram_offset.json
+data/drop_keywords.json
+data/naukri_resume_sync.json
+data/hirist_resume_sync.json
+data/user_memory.json
+data/pending_questions.json
+data/technical_failures.json
+data/memory_corrections.json
+data/review/
+data/models/
+data/faiss/
+data/training/
+data/models/job-answers-lora/
+data/models/job-answers-fused/
+data/models/job-answers-gguf/
+litellm/.env
+litellm/litellm.db
+data/resume_text.cache.txt
+.playwright/
+
+# AWS deployment secrets — SSH private key, RDP password, and instance-specific
+# identifiers. None of this belongs in version control, ever.
+aws-deploy/
+config.docker.yaml
+config.vm.yaml
+resume_variants.db
+data/resume_variants/
+data/cost_ledger.db
