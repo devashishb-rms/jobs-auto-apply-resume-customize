@@ -10,7 +10,6 @@ from urllib.parse import urlencode, urljoin
 from playwright.async_api import Page, Response
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..config import NaukriFiltersConfig
 from ..cookies import slugify
 from ..page_load import (
     goto_settled,
@@ -19,6 +18,7 @@ from ..page_load import (
     wait_for_page_settled,
 )
 from ..utils import JobListing
+from .config import NaukriFiltersConfig
 
 logger = logging.getLogger("job_apply")
 

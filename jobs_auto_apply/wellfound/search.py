@@ -10,10 +10,10 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..config import WellfoundFiltersConfig
 from ..page_load import goto_settled
 from ..utils import JobListing
 from .card import meta_from_card_text, pick_job_title_from_card
+from .config import WellfoundFiltersConfig
 
 logger = logging.getLogger("job_apply")
 

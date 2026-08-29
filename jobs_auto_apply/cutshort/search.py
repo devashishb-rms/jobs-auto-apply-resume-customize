@@ -8,11 +8,11 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from playwright.async_api import Page
 
-from ..config import CutshortFiltersConfig
 from ..cookies import slugify
 from ..page_load import goto_settled, scroll_lazy_page, wait_for_page_settled
 from ..utils import JobListing
 from .auth import CUTSHORT_ORIGIN
+from .config import CutshortFiltersConfig
 
 logger = logging.getLogger("job_apply")
 

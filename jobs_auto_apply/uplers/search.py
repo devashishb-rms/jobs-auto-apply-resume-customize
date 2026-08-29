@@ -6,9 +6,9 @@ import re
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..config import UplersFiltersConfig
 from ..utils import JobListing
 from .auth import UPLERS_JOBS_URLS
+from .config import UplersFiltersConfig
 
 logger = logging.getLogger("job_apply")
 

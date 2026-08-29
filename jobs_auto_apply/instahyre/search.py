@@ -7,9 +7,9 @@ import re
 from playwright.async_api import Page
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
-from ..config import InstahyreFiltersConfig
 from ..utils import JobListing
 from .auth import INSTAHYRE_OPPORTUNITIES
+from .config import InstahyreFiltersConfig
 from .feeds import _wait_for_opportunities, activate_feed, feeds_from_config
 
 logger = logging.getLogger("job_apply")

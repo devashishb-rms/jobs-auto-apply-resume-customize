@@ -1,16 +1,29 @@
-"""Formal Platform Adapter contract (v3 §A6, §B4).
+"""Formal Platform Adapter contract (v3 §A6, §B4) + self-registering PlatformSpec.
 
 Every existing v2 site package (``naukri/``, ``hirist/``, ``wellfound/``,
-``instahyre/``, ``cutshort/``, ``uplers/``) already exposes ``apply_batch`` /
-``collect_job_listings`` functions that ``cli.py`` calls by name via hand-maintained
-dicts. This module formalizes that implicit contract as a ``runtime_checkable``
-``Protocol`` and wraps each site's existing functions in a thin adapter object —
-**no Playwright DOM logic is rewritten here**, only the seams are named.
+``instahyre/``, ``cutshort/``, ``uplers/``, ``indeed/``) already exposes
+``apply_batch`` / ``collect_job_listings`` functions that used to be wired up by
+hand in four separate places (config.py, browser.py, cli.py, platform_adapter.py).
+This module now formalizes that implicit contract two ways:
 
-This is a pure, additive refactor: nothing in this module changes what any
-existing CLI command does. ``cli.py`` keeps calling the site packages' functions
-directly (unchanged); the resilience engine (Phase 2) and the tailoring shadow
-hook (Phase 3) are what actually read from ``ADAPTERS``.
+1. ``PlatformAdapter`` — a ``runtime_checkable`` ``Protocol`` wrapping each site's
+   existing functions in a thin adapter object (unchanged from the original v3
+   pass — **no Playwright DOM logic is rewritten here**, only the seams are named).
+2. ``PlatformSpec`` — a declarative, self-registering bundle of *everything* a
+   platform needs to be wired up (origin/login URLs, auth method, the three
+   adapter functions, its filters dataclass + YAML parser, etc). Each site
+   package declares one module-level ``PLATFORM = PlatformSpec(...)`` constant
+   (in its ``__init__.py``); ``discover_platforms()`` below finds it via
+   ``pkgutil.iter_modules`` over ``jobs_auto_apply``'s immediate subpackages —
+   any subpackage without a ``PLATFORM`` attribute (``answers/``, ``ats/``,
+   ``tailoring/``, ``resilience/``, ``profile/``, ...) is silently skipped, not
+   an error. Adding platform #8 now means writing that platform's package and
+   declaring its ``PLATFORM`` spec — zero edits to this file, config.py,
+   browser.py, or cli.py.
+
+This is a pure, additive-to-the-*wiring* refactor: nothing here changes what any
+existing CLI command does. The resilience engine (Phase 2) and the tailoring
+shadow hook (Phase 3) are what actually read from ``ADAPTERS``.
 
 Deviation from the SDA's literal §A6 signature (documented judgment call): the
 spec's ``PlatformAdapter.collect_listings(config, limit)`` and
@@ -27,15 +40,29 @@ is what actually delivers OCP, not the exact parameter list.
 
 from __future__ import annotations
 
+import importlib
 import logging
+import pkgutil
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from playwright.async_api import BrowserContext, Page
 
-from .config import AppConfig
 from .utils import JobListing
+
+if TYPE_CHECKING:
+    # Deliberately NOT imported at runtime: config.py's load_config() needs to
+    # import discover_platforms() from *this* module to know which platform keys
+    # to look for in YAML (Tier 1 step 6), so this module must not import
+    # config.py eagerly at module scope or the two modules would deadlock each
+    # other on import (config -> platform_adapter -> config, mid-definition).
+    # `from __future__ import annotations` (above) already makes every type hint
+    # in this file a lazy string, so this TYPE_CHECKING-only import costs nothing
+    # at runtime while still giving type checkers/IDEs the real type.
+    from .config import AppConfig
 
 logger = logging.getLogger("job_apply")
 
@@ -198,9 +225,9 @@ class _IndeedAdapter(_BaseAdapter):
         # would silently use collect_job_listings' own default (False) instead of
         # the user's configured value. Read the live config at call time instead,
         # exactly like the CLI path does, so both paths agree.
-        from .config import IndeedFiltersConfig
+        from .indeed.config import IndeedFiltersConfig
 
-        filters = config.indeed.filters
+        filters = config.platforms["indeed"].filters
         kwargs = dict(self._collect_kwargs)
         if isinstance(filters, IndeedFiltersConfig):
             kwargs.setdefault("easy_apply_only", filters.easy_apply_only)
@@ -230,38 +257,134 @@ class _WellfoundAdapter(_BaseAdapter):
         return await generic_detect_blocking_event(page, platform=self.name, listings_found=listings_found)
 
 
-def _build_registry() -> dict[str, PlatformAdapter]:
-    from .cutshort.apply import apply_batch as cutshort_apply_batch
-    from .cutshort.auth import verify_logged_in as cutshort_verify
-    from .cutshort.search import collect_job_listings as cutshort_collect
-    from .hirist.apply import apply_batch as hirist_apply_batch
-    from .hirist.auth import verify_logged_in as hirist_verify
-    from .hirist.search import collect_job_listings as hirist_collect
-    from .indeed.apply import apply_batch as indeed_apply_batch
-    from .indeed.auth import verify_logged_in as indeed_verify
-    from .indeed.search import collect_job_listings as indeed_collect
-    from .instahyre.apply import apply_batch as instahyre_apply_batch
-    from .instahyre.auth import verify_logged_in as instahyre_verify
-    from .instahyre.search import collect_job_listings as instahyre_collect
-    from .naukri.apply import apply_batch as naukri_apply_batch
-    from .naukri.auth import verify_logged_in as naukri_verify
-    from .naukri.search import collect_job_listings as naukri_collect
-    from .uplers.apply import apply_batch as uplers_apply_batch
-    from .uplers.auth import verify_logged_in as uplers_verify
-    from .uplers.search import collect_job_listings as uplers_collect
-    from .wellfound.apply import apply_batch as wellfound_apply_batch
-    from .wellfound.auth import verify_logged_in as wellfound_verify
-    from .wellfound.search import collect_job_listings as wellfound_collect
+CollectFn = Callable[..., Awaitable[list[JobListing]]]
+ApplyBatchFn = Callable[..., Awaitable[int]]
+VerifyFn = Callable[[Page, str], Awaitable[bool]]
+InjectCookiesFn = Callable[[BrowserContext, Path], Awaitable[None]]
+UrlFn = Callable[["AppConfig"], str]
 
-    return {
-        "naukri": _BaseAdapter("naukri", naukri_collect, naukri_apply_batch, naukri_verify),
-        "hirist": _BaseAdapter("hirist", hirist_collect, hirist_apply_batch, hirist_verify),
-        "instahyre": _BaseAdapter("instahyre", instahyre_collect, instahyre_apply_batch, instahyre_verify),
-        "cutshort": _BaseAdapter("cutshort", cutshort_collect, cutshort_apply_batch, cutshort_verify),
-        "indeed": _IndeedAdapter("indeed", indeed_collect, indeed_apply_batch, indeed_verify),
-        "uplers": _BaseAdapter("uplers", uplers_collect, uplers_apply_batch, uplers_verify),
-        "wellfound": _WellfoundAdapter("wellfound", wellfound_collect, wellfound_apply_batch, wellfound_verify),
-    }
+
+@dataclass(frozen=True)
+class PlatformSpec:
+    """Declarative, self-registering description of one job-board platform.
+
+    Each site package (``naukri/``, ``hirist/``, ...) declares exactly one
+    module-level ``PLATFORM = PlatformSpec(...)`` constant in its
+    ``__init__.py``. ``discover_platforms()`` finds every such spec via
+    filesystem scanning (no hardcoded platform-name list anywhere), and this
+    module, ``browser.py``, and ``config.py`` all build their per-platform
+    wiring (the adapter registry, the browser-session function, and the YAML
+    ``filters:`` parsing) generically from the discovered specs.
+
+    This is a *declarative wrapper* around functions/constants that already
+    exist in each site package — it does not reimplement or rewrite any
+    Playwright DOM logic; it only names the seams so the wiring layer can be
+    generated instead of hand-maintained.
+    """
+
+    # --- identity ---
+    name: str  # registry key / CLI --platform value, e.g. "naukri"
+    platform_label: str  # human-readable label used in log/console messages, e.g. "Naukri"
+
+    # --- auth wiring (matches browser.py's two existing paths) ---
+    # "browser" = reuse a real Chrome profile (Google-OAuth-only sites like
+    #             Wellfound/Uplers, where a headless ephemeral context can't
+    #             complete the OAuth flow); "cookies" = ephemeral Playwright
+    #             context + injected cookies.json (safe to run one per platform
+    #             in parallel, unlike the shared Chrome profile).
+    auth_method: str
+    origin: UrlFn  # AppConfig -> origin URL. A function (not a plain str) because
+    # Indeed's origin depends on the user's configured country domain
+    # (config.platforms["indeed"].filters.domain) — every other platform's
+    # origin function just ignores its `config` argument and returns a constant.
+    login_url: UrlFn
+    default_cookies_file: str
+    # Plain (context, cookies_path) / (page, expected_name) callables — this is
+    # exactly what the PlatformAdapter registry needs (matches this project's
+    # pre-refactor behavior, where the adapter registry also used the plain,
+    # unbound functions rather than a config-bound variant).
+    inject_cookies: InjectCookiesFn
+    verify_logged_in: VerifyFn
+
+    # --- adapter wiring (see PlatformAdapter / _BaseAdapter above) ---
+    collect_listings: CollectFn
+    apply_batch: ApplyBatchFn
+
+    # --- config wiring (Tier 1 step 6: config.py parses each platform's
+    # `filters:` YAML block generically using these instead of a hardcoded
+    # per-platform if/elif chain) ---
+    filters_cls: type
+    parse_filters: Callable[[dict], Any]
+
+    # browser.py's generic session builder needs a *config-bound* variant of
+    # inject_cookies/verify_logged_in for platforms whose auth depends on
+    # runtime config (Indeed's country domain). None (the default, used by
+    # every platform except Indeed) means "just use the plain
+    # `inject_cookies`/`verify_logged_in` above, ignoring config".
+    inject_cookies_bind: Callable[[AppConfig], InjectCookiesFn] | None = None
+    verify_logged_in_bind: Callable[[AppConfig], VerifyFn] | None = None
+
+    # Platforms whose adapter needs custom behavior (Indeed's live config read
+    # for easy_apply_only/domain; Wellfound's §B5 blocking-event refinement)
+    # supply their own _BaseAdapter subclass here instead of overriding a
+    # detect_blocking_event field with something less flexible — a full adapter
+    # subclass can override *any* of collect_listings/apply/verify_session/
+    # detect_blocking_event, which a single-method override field couldn't.
+    adapter_class: type = _BaseAdapter
+
+    filters_enabled_default: bool = True
+
+    # --- browser.py wiring ---
+    # True only for "cookies"-auth platforms safe to run concurrently, each in
+    # its own Chromium instance (browser.py's PARALLEL_COOKIE_PLATFORMS). The
+    # two "browser"-auth (Chrome-profile) platforms share ONE real Chrome
+    # profile directory, so running them concurrently would corrupt it —
+    # parallel_safe must be False whenever auth_method == "browser".
+    parallel_safe: bool = False
+
+
+def discover_platforms() -> dict[str, PlatformSpec]:
+    """Scan jobs_auto_apply's immediate subpackages for a module-level ``PLATFORM``.
+
+    Any subpackage that doesn't define ``PLATFORM: PlatformSpec`` (``answers/``,
+    ``ats/``, ``tailoring/``, ``resilience/``, ``profile/``, ...) is silently
+    skipped — that's the expected, common case, not an error. A subpackage that
+    fails to *import* (a real bug in that package) is logged and skipped rather
+    than crashing every other platform's discovery, since one broken package
+    shouldn't take the whole registry down.
+    """
+    import jobs_auto_apply as _pkg
+
+    specs: dict[str, PlatformSpec] = {}
+    prefix = f"{_pkg.__name__}."
+    for module_info in pkgutil.iter_modules(_pkg.__path__, prefix):
+        if not module_info.ispkg:
+            continue
+        try:
+            module = importlib.import_module(module_info.name)
+        except Exception:
+            logger.exception("Platform discovery: failed to import subpackage %s — skipping", module_info.name)
+            continue
+        spec = getattr(module, "PLATFORM", None)
+        if spec is None:
+            continue
+        if not isinstance(spec, PlatformSpec):
+            logger.warning(
+                "Platform discovery: %s.PLATFORM is not a PlatformSpec (%r) — skipping",
+                module_info.name,
+                type(spec),
+            )
+            continue
+        specs[spec.name] = spec
+    return specs
+
+
+def _build_registry() -> dict[str, PlatformAdapter]:
+    registry: dict[str, PlatformAdapter] = {}
+    for spec in discover_platforms().values():
+        adapter_cls = spec.adapter_class or _BaseAdapter
+        registry[spec.name] = adapter_cls(spec.name, spec.collect_listings, spec.apply_batch, spec.verify_logged_in)
+    return registry
 
 
 ADAPTERS: dict[str, PlatformAdapter] = {}

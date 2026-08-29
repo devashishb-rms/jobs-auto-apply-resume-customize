@@ -35,10 +35,10 @@ from urllib.parse import quote_plus, urljoin
 
 from playwright.async_api import Page
 
-from ..config import IndeedFiltersConfig
 from ..page_load import goto_settled, scroll_lazy_page, wait_for_page_settled
 from ..utils import JobListing
 from .auth import DEFAULT_INDEED_DOMAIN, indeed_origin
+from .config import IndeedFiltersConfig
 
 logger = logging.getLogger("job_apply")
 
