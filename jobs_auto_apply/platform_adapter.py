@@ -389,8 +389,40 @@ def _build_registry() -> dict[str, PlatformAdapter]:
 
 ADAPTERS: dict[str, PlatformAdapter] = {}
 
+# Judgment call (fix for a bug found in code review, not present in any shipping
+# entry point but a real latent trap): ADAPTERS used to be populated eagerly by a
+# bare _init() call at module-import time. Every <platform>/__init__.py imports
+# this module as its first project import (to get PlatformSpec) and then, later
+# in the same file, sets `PLATFORM = PlatformSpec(...)`. If something imports a
+# platform package BEFORE this module (e.g. `import jobs_auto_apply.wellfound`
+# as a script's first project import, rather than going through main.py/cli.py/
+# browser.py, which all reach this module first today), discover_platforms()'s
+# pkgutil scan re-enters that platform's module via sys.modules mid-import — its
+# `PLATFORM` attribute doesn't exist yet — and getattr(module, "PLATFORM", None)
+# silently returns None, dropping that one platform from the registry. Making
+# initialization lazy (deferred to first real use via get_adapter(), rather than
+# import time) sidesteps this: by the time anything actually calls get_adapter(),
+# every platform package involved in the current process has long since finished
+# importing, regardless of which module happened to trigger platform_adapter's
+# own import first.
+_initialized = False
+
+
+def _ensure_initialized() -> None:
+    global _initialized
+    if _initialized:
+        return
+    try:
+        ADAPTERS.update(_build_registry())
+        assert_adapters_valid()
+    except Exception:
+        logger.exception("Failed to initialize platform adapter registry")
+        raise
+    _initialized = True
+
 
 def get_adapter(platform: str) -> PlatformAdapter | None:
+    _ensure_initialized()
     return ADAPTERS.get(platform)
 
 
@@ -406,15 +438,5 @@ def assert_adapters_valid() -> None:
                 f"Platform adapter '{name}' does not satisfy the PlatformAdapter protocol "
                 f"(missing collect_listings/apply/verify_session/detect_blocking_event)."
             )
-
-
-def _init() -> None:
-    try:
-        ADAPTERS.update(_build_registry())
-        assert_adapters_valid()
-    except Exception:
-        logger.exception("Failed to initialize platform adapter registry")
-        raise
-
-
-_init()
+# No eager _init() call here anymore — initialization is lazy, triggered by the
+# first get_adapter() call (see _ensure_initialized's docstring above for why).

@@ -1041,6 +1041,35 @@ def _interactive_review(config: AppConfig, platform: str, items: list[ReviewItem
     console.print("Run [bold]python main.py apply-reviewed --platform all[/bold] when ready.")
 
 
+def _check_enabled_platforms_registered(config: AppConfig) -> None:
+    """Fail loudly at startup if an enabled platform's adapter never registered.
+
+    discover_platforms()/get_adapter() are deliberately resilient — one platform
+    package with a real bug in it (an ImportError somewhere in its DOM code) is
+    logged and skipped rather than crashing every other platform's discovery
+    (see platform_adapter.py's discover_platforms docstring). That resilience is
+    the right default for an "all" run, but it has a silent-degradation failure
+    mode: a broken platform just vanishes from config.platforms/_enabled_platforms
+    and the run proceeds against fewer boards than the user configured, with
+    nothing forcing them to notice — exactly the kind of thing that goes
+    unnoticed for days on an unattended overnight run. This check closes that
+    gap: any platform the user has enabled in config.yaml MUST have a working
+    registered adapter, or the run refuses to start with a clear reason, rather
+    than quietly applying to 6 of 7 configured boards.
+    """
+    from .platform_adapter import get_adapter
+
+    missing = [name for name, pc in config.platforms.items() if pc.enabled and get_adapter(name) is None]
+    if missing:
+        console.print(
+            f"[red]Enabled platform(s) failed to register and cannot run: {', '.join(sorted(missing))}[/red]\n"
+            "[red]This usually means that platform's package has an import-time error — "
+            "check the log above for the actual exception, or run with --verbose. "
+            "Disable the platform in config.yaml if you want to proceed without it.[/red]"
+        )
+        raise SystemExit(1)
+
+
 def _check_prerequisites(config: AppConfig, *, require_resume: bool = True) -> None:
     if require_resume and not config.resume_path.exists():
         console.print(f"[red]Resume not found:[/red] {config.resume_path}")
@@ -1062,6 +1091,7 @@ def _check_prerequisites(config: AppConfig, *, require_resume: bool = True) -> N
             f"[red]Invalid browser.engine '{config.browser.engine}' — must be chromium, firefox, or webkit.[/red]"
         )
         raise SystemExit(1)
+    _check_enabled_platforms_registered(config)
     if config.browser.engine != "chromium" and config.browser.use_chrome_profile:
         console.print(
             "[yellow]browser.use_chrome_profile only works with browser.engine: chromium — "
