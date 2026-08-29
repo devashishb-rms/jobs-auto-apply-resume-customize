@@ -12,7 +12,7 @@ from ..cover_letter import build_cover_letter, strip_markdown_emphasis
 from ..page_load import ensure_page_ready, goto_settled
 from ..resume_upload import upload_resume
 from ..utils import JobListing
-from .detector import detect_ats
+from .detector import detect_ats, open_apply_text_for
 from .workday import apply_workday
 
 logger = logging.getLogger("job_apply")
@@ -90,20 +90,15 @@ async def _fill_standard_fields(page: Page, user: UserConfig) -> None:
 
 
 async def _open_apply_form(page: Page, ats: str) -> None:
+    # Vendor-specific "open apply form" click text (Greenhouse/Lever/Ashby today)
+    # comes from ats/vendors.yaml (Tier 2 refactor) instead of a hardcoded
+    # if/elif per vendor — None means this vendor doesn't need a different
+    # pattern than the generic APPLY_BUTTON_RE fallback below.
     await page.wait_for_timeout(1500)
-    if ats == "greenhouse":
-        await _click_first_matching(page, re.compile(r"apply for this job", re.I))
+    pattern = open_apply_text_for(ats) or APPLY_BUTTON_RE
+    await _click_first_matching(page, pattern)
+    if pattern is not APPLY_BUTTON_RE:
         await page.wait_for_timeout(1000)
-        return
-    if ats == "lever":
-        await _click_first_matching(page, re.compile(r"apply for this job", re.I))
-        await page.wait_for_timeout(1000)
-        return
-    if ats == "ashby":
-        await _click_first_matching(page, re.compile(r"apply", re.I))
-        await page.wait_for_timeout(1000)
-        return
-    await _click_first_matching(page, APPLY_BUTTON_RE)
 
 
 async def _submit_form(page: Page) -> bool:

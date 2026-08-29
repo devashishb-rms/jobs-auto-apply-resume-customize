@@ -1,0 +1,66 @@
+# ATS vendor registry — Tier 2 of the auto-apply platform-scaling refactor.
+#
+# Previously detector.py hardcoded a Python list of (name, regex) tuples, and
+# apply.py's _open_apply_form() hardcoded a further per-vendor if/elif for the
+# handful of vendors (Greenhouse, Lever, Ashby) whose "open the apply form"
+# click needs a different button-text pattern than the generic APPLY_BUTTON_RE.
+# Both are now data here: adding ATS vendor #31 is "add a YAML entry", not "add
+# a Python branch" — detector.py and apply.py both load and match against this
+# file generically.
+#
+# Fields per vendor:
+#   name:            vendor key, returned by detect_ats() (unchanged values —
+#                    same strings the old hardcoded ATS_PATTERNS returned, so
+#                    ats/apply.py's `ats == "workday"` etc. checks keep working).
+#   patterns:        list of case-insensitive regexes matched against the target
+#                    URL; first vendor whose any pattern matches wins (same
+#                    first-match-wins order as the old ATS_PATTERNS list).
+#   open_apply_text: OPTIONAL. Regex (case-insensitive) for the button/link text
+#                    _open_apply_form() clicks to reveal the actual application
+#                    form on that vendor's job page. Omitted = use the generic
+#                    APPLY_BUTTON_RE fallback (apply.py's existing default
+#                    behavior for every vendor that doesn't override it).
+
+vendors:
+  - name: greenhouse
+    patterns:
+      - "(?:boards|job-boards|board)\\.greenhouse\\.io"
+    open_apply_text: "apply for this job"
+
+  - name: lever
+    patterns:
+      - "jobs\\.lever\\.co|lever\\.co"
+    open_apply_text: "apply for this job"
+
+  - name: ashby
+    patterns:
+      - "jobs\\.ashbyhq\\.com"
+    open_apply_text: "apply"
+
+  - name: workday
+    patterns:
+      - "(?:\\w+\\.)?myworkdayjobs\\.com|workday\\.com/.*/job/"
+
+  - name: smartrecruiters
+    patterns:
+      - "smartrecruiters\\.com|jobs\\.smartrecruiters\\.com"
+
+  - name: icims
+    patterns:
+      - "icims\\.com"
+
+  - name: bamboohr
+    patterns:
+      - "bamboohr\\.com"
+
+  - name: teamtailor
+    patterns:
+      - "teamtailor\\.com"
+
+  - name: jobvite
+    patterns:
+      - "jobvite\\.com"
+
+  - name: recruitee
+    patterns:
+      - "recruitee\\.com"
