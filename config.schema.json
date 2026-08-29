@@ -7,13 +7,7 @@
     "compensation",
     "cover_letter",
     "cover_note",
-    "wellfound",
-    "uplers",
-    "naukri",
-    "hirist",
-    "instahyre",
-    "cutshort",
-    "indeed",
+    "platforms",
     "workday",
     "llm",
     "whatsapp",
@@ -44,26 +38,11 @@
     "cover_note": {
       "type": "string"
     },
-    "wellfound": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "uplers": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "naukri": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "hirist": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "instahyre": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "cutshort": {
-      "$ref": "#/definitions/PlatformConfig"
-    },
-    "indeed": {
-      "$ref": "#/definitions/PlatformConfig"
+    "platforms": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/PlatformRuntimeConfig"
+      }
     },
     "workday": {
       "$ref": "#/definitions/WorkdayConfig"
@@ -125,7 +104,7 @@
       }
     }
   },
-  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', wellfound: 'PlatformConfig', uplers: 'PlatformConfig', naukri: 'PlatformConfig', hirist: 'PlatformConfig', instahyre: 'PlatformConfig', cutshort: 'PlatformConfig', indeed: 'PlatformConfig', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig', tailoring: 'TailoringConfig' = <factory>, resilience: 'ResilienceConfig' = <factory>)",
+  "description": "AppConfig(user: 'UserConfig', resume: 'ResumeConfig', profile: 'ProfileConfig', compensation: 'CompensationConfig', cover_letter: 'CoverLetterConfig', cover_note: 'str', platforms: 'dict[str, PlatformRuntimeConfig]', workday: 'WorkdayConfig', llm: 'LLMConfig', whatsapp: 'WhatsAppConfig', telegram: 'TelegramConfig', application: 'ApplicationConfig', browser: 'BrowserConfig', auth: 'AuthConfig', state: 'StateConfig', paths: 'PathsConfig', answers: 'AnswersPolicyConfig', tailoring: 'TailoringConfig' = <factory>, resilience: 'ResilienceConfig' = <factory>)",
   "$schema": "http://json-schema.org/draft-06/schema#",
   "definitions": {
     "UserConfig": {
@@ -314,7 +293,7 @@
       },
       "description": "CoverLetterConfig(mode: 'str' = 'dynamic', include_ctc: 'bool' = True, max_words: 'int' = 200, reference_path: 'str' = 'profile/cover_letter_reference.txt')"
     },
-    "PlatformConfig": {
+    "PlatformRuntimeConfig": {
       "type": "object",
       "required": [
         "enabled",
@@ -328,372 +307,9 @@
         "cookies_file": {
           "type": "string"
         },
-        "filters": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/WellfoundFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/UplersFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/NaukriFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/HiristFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/InstahyreFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/CutshortFiltersConfig"
-            },
-            {
-              "$ref": "#/definitions/IndeedFiltersConfig"
-            }
-          ]
-        }
+        "filters": {}
       },
-      "description": "PlatformConfig(enabled: 'bool', cookies_file: 'str', filters: 'WellfoundFiltersConfig | UplersFiltersConfig | NaukriFiltersConfig | HiristFiltersConfig | InstahyreFiltersConfig | CutshortFiltersConfig | IndeedFiltersConfig')"
-    },
-    "WellfoundFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "use_profile_filters": {
-          "type": "boolean",
-          "default": true
-        },
-        "roles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "remote_policy": {
-          "type": "string",
-          "default": "some"
-        },
-        "experience_levels": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "job_types": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "keywords": {
-          "type": "string",
-          "default": ""
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "salary_min": {
-          "type": "integer"
-        },
-        "salary_currency": {
-          "type": "string",
-          "default": "INR"
-        },
-        "include_no_salary": {
-          "type": "boolean",
-          "default": true
-        },
-        "recently_active": {
-          "type": "string",
-          "default": "week"
-        },
-        "sort": {
-          "type": "string",
-          "default": "newest"
-        }
-      },
-      "description": "WellfoundFiltersConfig(use_profile_filters: 'bool' = True, roles: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, remote_policy: 'str' = 'some', experience_levels: 'list[str]' = <factory>, job_types: 'list[str]' = <factory>, keywords: 'str' = '', skills: 'list[str]' = <factory>, salary_min: 'int | None' = None, salary_currency: 'str' = 'INR', include_no_salary: 'bool' = True, recently_active: 'str | None' = 'week', sort: 'str' = 'newest')"
-    },
-    "UplersFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "keywords": {
-          "type": "string",
-          "default": ""
-        },
-        "skills": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "roles": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "experience_years_min": {
-          "type": "integer",
-          "default": 3
-        },
-        "remote_only": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "description": "UplersFiltersConfig(keywords: 'str' = '', skills: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, roles: 'list[str]' = <factory>, experience_years_min: 'int | None' = 3, remote_only: 'bool' = False)"
-    },
-    "NaukriFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "keywords": {
-          "type": "string",
-          "default": ""
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "experience_min": {
-          "type": "integer",
-          "default": 3
-        },
-        "experience_max": {
-          "type": "integer",
-          "default": 8
-        },
-        "salary_min_lakhs": {
-          "type": "number"
-        },
-        "remote_only": {
-          "type": "boolean",
-          "default": false
-        },
-        "quick_apply_only": {
-          "type": "boolean",
-          "default": true
-        },
-        "sort": {
-          "type": "string",
-          "default": "freshness"
-        },
-        "max_job_age_days": {
-          "type": "integer"
-        },
-        "max_pages": {
-          "type": "integer",
-          "default": 1
-        }
-      },
-      "description": "NaukriFiltersConfig(keywords: 'str' = '', locations: 'list[str]' = <factory>, experience_min: 'int | None' = 3, experience_max: 'int | None' = 8, salary_min_lakhs: 'float | None' = None, remote_only: 'bool' = False, quick_apply_only: 'bool' = True, sort: 'str' = 'freshness', max_job_age_days: 'int | None' = None, max_pages: 'int' = 1)"
-    },
-    "HiristFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "search_urls": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "keywords": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "cities": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "experience": {
-          "type": "string",
-          "default": "2-5"
-        },
-        "experience_min": {
-          "type": "integer"
-        },
-        "experience_max": {
-          "type": "integer"
-        },
-        "max_pages": {
-          "type": "integer",
-          "default": 1
-        }
-      },
-      "description": "HiristFiltersConfig(search_urls: 'list[str]' = <factory>, keywords: 'list[str]' = <factory>, cities: 'list[str]' = <factory>, experience: 'str' = '2-5', experience_min: 'int | None' = None, experience_max: 'int | None' = None, max_pages: 'int' = 1)"
-    },
-    "InstahyreFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "search_urls": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "feeds": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          },
-          "default": []
-        },
-        "job_functions": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "experience_years": {
-          "type": "integer"
-        },
-        "company_size": {
-          "type": "string",
-          "default": "All"
-        },
-        "default_skills": {
-          "type": "string",
-          "default": ""
-        },
-        "job_function_aliases": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {}
-        },
-        "skill_chip_values": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {}
-        },
-        "skill_type_queries": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {}
-        }
-      },
-      "description": "InstahyreFiltersConfig(search_urls: 'list[str]' = <factory>, feeds: 'list[dict[str, Any]]' = <factory>, job_functions: 'list[str]' = <factory>, locations: 'list[str]' = <factory>, experience_years: 'int | None' = None, company_size: 'str' = 'All', default_skills: 'str' = '', job_function_aliases: 'dict[str, str]' = <factory>, skill_chip_values: 'dict[str, str]' = <factory>, skill_type_queries: 'dict[str, str]' = <factory>)"
-    },
-    "CutshortFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "search_urls": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "keywords": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "cities": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "max_pages": {
-          "type": "integer",
-          "default": 1
-        }
-      },
-      "description": "CutshortFiltersConfig(search_urls: 'list[str]' = <factory>, keywords: 'list[str]' = <factory>, cities: 'list[str]' = <factory>, max_pages: 'int' = 1)"
-    },
-    "IndeedFiltersConfig": {
-      "type": "object",
-      "properties": {
-        "domain": {
-          "type": "string",
-          "default": "in.indeed.com"
-        },
-        "search_urls": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "keywords": {
-          "type": "string",
-          "default": ""
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": []
-        },
-        "max_job_age_days": {
-          "type": "integer"
-        },
-        "sort": {
-          "type": "string",
-          "default": "date"
-        },
-        "easy_apply_only": {
-          "type": "boolean",
-          "default": true
-        },
-        "max_pages": {
-          "type": "integer",
-          "default": 1
-        }
-      },
-      "description": "IndeedFiltersConfig(domain: 'str' = 'in.indeed.com', search_urls: 'list[str]' = <factory>, keywords: 'str' = '', locations: 'list[str]' = <factory>, max_job_age_days: 'int | None' = None, sort: 'str' = 'date', easy_apply_only: 'bool' = True, max_pages: 'int' = 1)"
+      "description": "Generic per-platform runtime config: ``enabled``/``cookies_file`` plus\nthat platform's own typed filters dataclass (e.g.\n``naukri.config.NaukriFiltersConfig``).\n\nReplaces the pre-refactor pattern of one hand-written ``<Platform>FiltersConfig``\ndataclass + one named ``AppConfig`` field per platform (``AppConfig.wellfound``,\n``AppConfig.naukri``, ...) with ``AppConfig.platforms: dict[str,\nPlatformRuntimeConfig]``, built generically in ``load_config()`` from the\nauto-discovered ``PlatformSpec`` registry (see ``platform_adapter.py``) \u2014 so\nadding platform #8 needs no new dataclass or field here, only that platform's\nown ``<platform>/config.py`` + ``PLATFORM = PlatformSpec(...)``.\n\nJudgment call on ``filters``' type: ``dataclasses_jsonschema`` (this project's\nschema-generation library) needs concrete types to emit a JSON Schema, and a\ntruly heterogeneous \"whichever dataclass this platform's PlatformSpec says\"\nvalue can't be expressed as a fixed Union without hardcoding every platform's\nfilters type here \u2014 exactly the per-platform coupling this refactor removes.\n``Any`` is used instead; ``scripts/generate_config_schema.py`` still runs\ncleanly (see that script's comment), and each platform's own filters\ndataclass is still fully typed and still a ``JsonSchemaMixin`` in its own\npackage for anyone who wants its schema directly.\n"
     },
     "WorkdayConfig": {
       "type": "object",

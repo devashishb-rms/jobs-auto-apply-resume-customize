@@ -76,122 +76,33 @@ class ResumeConfig(JsonSchemaMixin):
 
 
 @dataclass
-class WellfoundFiltersConfig(JsonSchemaMixin):
-    use_profile_filters: bool = True
-    roles: list[str] = field(default_factory=list)
-    locations: list[str] = field(default_factory=list)
-    remote_policy: str = "some"
-    experience_levels: list[str] = field(default_factory=list)
-    job_types: list[str] = field(default_factory=list)
-    keywords: str = ""
-    skills: list[str] = field(default_factory=list)
-    salary_min: int | None = None
-    salary_currency: str = "INR"
-    include_no_salary: bool = True
-    recently_active: str | None = "week"
-    sort: str = "newest"
+class PlatformRuntimeConfig(JsonSchemaMixin):
+    """Generic per-platform runtime config: ``enabled``/``cookies_file`` plus
+    that platform's own typed filters dataclass (e.g.
+    ``naukri.config.NaukriFiltersConfig``).
 
+    Replaces the pre-refactor pattern of one hand-written ``<Platform>FiltersConfig``
+    dataclass + one named ``AppConfig`` field per platform (``AppConfig.wellfound``,
+    ``AppConfig.naukri``, ...) with ``AppConfig.platforms: dict[str,
+    PlatformRuntimeConfig]``, built generically in ``load_config()`` from the
+    auto-discovered ``PlatformSpec`` registry (see ``platform_adapter.py``) — so
+    adding platform #8 needs no new dataclass or field here, only that platform's
+    own ``<platform>/config.py`` + ``PLATFORM = PlatformSpec(...)``.
 
-@dataclass
-class UplersFiltersConfig(JsonSchemaMixin):
-    keywords: str = ""
-    skills: list[str] = field(default_factory=list)
-    locations: list[str] = field(default_factory=list)
-    roles: list[str] = field(default_factory=list)
-    experience_years_min: int | None = 3
-    remote_only: bool = False
+    Judgment call on ``filters``' type: ``dataclasses_jsonschema`` (this project's
+    schema-generation library) needs concrete types to emit a JSON Schema, and a
+    truly heterogeneous "whichever dataclass this platform's PlatformSpec says"
+    value can't be expressed as a fixed Union without hardcoding every platform's
+    filters type here — exactly the per-platform coupling this refactor removes.
+    ``Any`` is used instead; ``scripts/generate_config_schema.py`` still runs
+    cleanly (see that script's comment), and each platform's own filters
+    dataclass is still fully typed and still a ``JsonSchemaMixin`` in its own
+    package for anyone who wants its schema directly.
+    """
 
-
-@dataclass
-class NaukriFiltersConfig(JsonSchemaMixin):
-    keywords: str = ""  # search keywords; set to your role/skills in config.yaml
-    locations: list[str] = field(default_factory=list)  # empty = India-wide (no city in URL)
-    experience_min: int | None = 3
-    experience_max: int | None = 8
-    salary_min_lakhs: float | None = None
-    remote_only: bool = False
-    quick_apply_only: bool = True
-    sort: str = "freshness"  # freshness | date | newest | relevance
-    max_job_age_days: int | None = None  # e.g. 7 → "Last 7 days" in Freshness filter
-    max_pages: int = 1  # scroll batches on single Aurus SRP (scroll → collect → apply)
-
-
-@dataclass
-class HiristFiltersConfig(JsonSchemaMixin):
-    search_urls: list[str] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=list)  # set your role/skill keywords in config.yaml
-    cities: list[str] = field(default_factory=list)  # empty = all India
-    experience: str = "2-5"  # 0-2, 2-5, 5-10, 10+ when using keyword search UI
-    experience_min: int | None = None  # minexp query param when building URLs
-    experience_max: int | None = None  # maxexp query param when building URLs
-    max_pages: int = 1  # SRP pages per search feed (apply page 1, then page 2, …)
-
-
-@dataclass
-class IndeedFiltersConfig(JsonSchemaMixin):
-    # Indeed serves country-specific subdomains (www.indeed.com for the US,
-    # in.indeed.com for India, uk.indeed.com, etc). This tool is India-focused,
-    # so the default is in.indeed.com — override for another country's site.
-    domain: str = "in.indeed.com"
-    search_urls: list[str] = field(default_factory=list)
-    keywords: str = ""  # maps to Indeed's `q` search param — set your role/skills in config.yaml
-    locations: list[str] = field(default_factory=list)  # maps to `l`; multiple = one feed per location
-    max_job_age_days: int | None = None  # `fromage` query param (e.g. 7 → posted within last 7 days)
-    sort: str = "date"  # date (newest first) | relevance
-    # Restrict to native "Indeed Apply" listings only (skip "apply on company site" postings).
-    # Detected client-side from the "Easily apply" badge on each job card — Indeed does not
-    # expose a documented, stable URL filter code for this, so it isn't done via search_urls.
-    easy_apply_only: bool = True
-    max_pages: int = 1  # SRP pages per search feed (start=0,10,20,… — apply page 1, then page 2, …)
-
-
-@dataclass
-class CutshortFiltersConfig(JsonSchemaMixin):
-    search_urls: list[str] = field(default_factory=list)
-    keywords: list[str] = field(default_factory=list)  # e.g. ["backend developer", "python"]
-    cities: list[str] = field(default_factory=list)  # empty = India-wide category pages
-    max_pages: int = 1  # SRP pages per search feed
-
-
-@dataclass
-class InstahyreFiltersConfig(JsonSchemaMixin):
-    search_urls: list[str] = field(default_factory=list)
-    feeds: list[dict[str, Any]] = field(default_factory=list)
-    # Job functions to target (human names like "Backend Development", or raw
-    # Instahyre "/api/v1/job_function/<id>" paths). Empty = use the built-in
-    # fallback in instahyre/feeds.py.
-    job_functions: list[str] = field(default_factory=list)
-    locations: list[str] = field(default_factory=list)
-    experience_years: int | None = None
-    company_size: str = "All"  # Small, Medium, Large, All
-    # --- Instahyre platform mappings (override/extend the built-in defaults so the
-    # tool works for any role family, not just backend/software) ---
-    # Fallback skills string used when a search feed doesn't specify its own skills.
-    default_skills: str = ""
-    # Map a human job-function name (case-insensitive) to its Instahyre API path,
-    # e.g. {"data science": "/api/v1/job_function/12"}. Merged over the built-ins.
-    job_function_aliases: dict[str, str] = field(default_factory=dict)
-    # Map a skill keyword (lowercase) to the Instahyre selectize chip data-value,
-    # e.g. {"node": "Nodejs", "golang": "Go"}. Merged over the built-ins.
-    skill_chip_values: dict[str, str] = field(default_factory=dict)
-    # Map a chip data-value to the text to type to surface it in the dropdown,
-    # e.g. {"Nodejs": "nodejs"}. Merged over the built-ins.
-    skill_type_queries: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class PlatformConfig(JsonSchemaMixin):
     enabled: bool
     cookies_file: str
-    filters: (
-        WellfoundFiltersConfig
-        | UplersFiltersConfig
-        | NaukriFiltersConfig
-        | HiristFiltersConfig
-        | InstahyreFiltersConfig
-        | CutshortFiltersConfig
-        | IndeedFiltersConfig
-    )
+    filters: Any
 
 
 @dataclass
@@ -496,13 +407,11 @@ class AppConfig(JsonSchemaMixin):
     compensation: CompensationConfig
     cover_letter: CoverLetterConfig
     cover_note: str
-    wellfound: PlatformConfig
-    uplers: PlatformConfig
-    naukri: PlatformConfig
-    hirist: PlatformConfig
-    instahyre: PlatformConfig
-    cutshort: PlatformConfig
-    indeed: PlatformConfig
+    # Every discovered job-board platform's {enabled, cookies_file, filters} — see
+    # PlatformRuntimeConfig's docstring. Keyed by PlatformSpec.name ("wellfound",
+    # "naukri", ...); load_config() populates this generically from whatever
+    # platform_adapter.discover_platforms() finds, with no hardcoded platform list.
+    platforms: dict[str, PlatformRuntimeConfig]
     workday: WorkdayConfig
     llm: LLMConfig
     whatsapp: WhatsAppConfig
@@ -619,18 +528,9 @@ class AppConfig(JsonSchemaMixin):
         return self.auth_sessions_dir
 
     def cookies_path(self, platform: str) -> Path:
-        mapping = {
-            "wellfound": self.wellfound.cookies_file,
-            "uplers": self.uplers.cookies_file,
-            "naukri": self.naukri.cookies_file,
-            "hirist": self.hirist.cookies_file,
-            "instahyre": self.instahyre.cookies_file,
-            "cutshort": self.cutshort.cookies_file,
-            "indeed": self.indeed.cookies_file,
-        }
-        if platform not in mapping:
+        if platform not in self.platforms:
             raise ValueError(f"Unknown platform: {platform}")
-        return self.base_dir / mapping[platform]
+        return self.base_dir / self.platforms[platform].cookies_file
 
 
 def _section(data: dict[str, Any], key: str) -> dict[str, Any]:
@@ -655,93 +555,6 @@ def _user_config(data: dict[str, Any]) -> UserConfig:
     )
 
 
-def _wellfound_filters(data: dict[str, Any]) -> WellfoundFiltersConfig:
-    return WellfoundFiltersConfig(
-        use_profile_filters=bool(data.get("use_profile_filters", True)),
-        roles=list(data.get("roles", [])),
-        locations=list(data.get("locations", [])),
-        remote_policy=str(data.get("remote_policy", "some")),
-        experience_levels=list(data.get("experience_levels", [])),
-        job_types=list(data.get("job_types", [])),
-        keywords=str(data.get("keywords", "")),
-        skills=list(data.get("skills", [])),
-        salary_min=data.get("salary_min"),
-        salary_currency=str(data.get("salary_currency", "INR")),
-        include_no_salary=bool(data.get("include_no_salary", True)),
-        recently_active=data.get("recently_active"),
-        sort=str(data.get("sort", "newest")),
-    )
-
-
-def _uplers_filters(data: dict[str, Any]) -> UplersFiltersConfig:
-    return UplersFiltersConfig(
-        keywords=str(data.get("keywords", "")),
-        skills=list(data.get("skills", [])),
-        locations=list(data.get("locations", [])),
-        roles=list(data.get("roles", [])),
-        experience_years_min=data.get("experience_years_min", 3),
-        remote_only=bool(data.get("remote_only", False)),
-    )
-
-
-def _naukri_filters(data: dict[str, Any]) -> NaukriFiltersConfig:
-    loc = data.get("locations")
-    return NaukriFiltersConfig(
-        keywords=str(data.get("keywords", "")),
-        locations=list(loc) if isinstance(loc, list) else [],
-        experience_min=data.get("experience_min", 3),
-        experience_max=data.get("experience_max"),
-        salary_min_lakhs=data.get("salary_min_lakhs"),
-        remote_only=bool(data.get("remote_only", False)),
-        quick_apply_only=bool(data.get("quick_apply_only", True)),
-        sort=str(data.get("sort", "freshness")),
-        max_job_age_days=data.get("max_job_age_days"),
-        max_pages=int(data.get("max_pages", 1)),
-    )
-
-
-def _hirist_filters(data: dict[str, Any]) -> HiristFiltersConfig:
-    kw = data.get("keywords", [])
-    urls = data.get("search_urls", [])
-    cities = data.get("cities")
-    return HiristFiltersConfig(
-        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
-        keywords=list(kw) if isinstance(kw, list) else [str(kw)] if kw else [],
-        cities=list(cities) if isinstance(cities, list) else [],
-        experience=str(data.get("experience", "2-5")),
-        experience_min=data.get("experience_min"),
-        experience_max=data.get("experience_max"),
-        max_pages=int(data.get("max_pages", 1)),
-    )
-
-
-def _cutshort_filters(data: dict[str, Any]) -> CutshortFiltersConfig:
-    kw = data.get("keywords", [])
-    urls = data.get("search_urls", [])
-    cities = data.get("cities")
-    return CutshortFiltersConfig(
-        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
-        keywords=list(kw) if isinstance(kw, list) else [str(kw)] if kw else [],
-        cities=list(cities) if isinstance(cities, list) else [],
-        max_pages=int(data.get("max_pages", 1)),
-    )
-
-
-def _indeed_filters(data: dict[str, Any]) -> IndeedFiltersConfig:
-    urls = data.get("search_urls", [])
-    locations = data.get("locations")
-    return IndeedFiltersConfig(
-        domain=str(data.get("domain") or data.get("country") or "in.indeed.com"),
-        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
-        keywords=str(data.get("keywords", "")),
-        locations=list(locations) if isinstance(locations, list) else [],
-        max_job_age_days=data.get("max_job_age_days"),
-        sort=str(data.get("sort", "date")),
-        easy_apply_only=bool(data.get("easy_apply_only", True)),
-        max_pages=int(data.get("max_pages", 1)),
-    )
-
-
 def _platform_delays(data: dict[str, Any]) -> PlatformDelaysConfig:
     raw = data if isinstance(data, dict) else {}
     return PlatformDelaysConfig(
@@ -754,42 +567,26 @@ def _platform_delays(data: dict[str, Any]) -> PlatformDelaysConfig:
     )
 
 
-def _str_str_map(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(k): str(v) for k, v in value.items()}
-
-
-def _instahyre_filters(data: dict[str, Any]) -> InstahyreFiltersConfig:
-    urls = data.get("search_urls", [])
-    raw_feeds = data.get("feeds", [])
-    feeds = [f for f in raw_feeds if isinstance(f, dict)] if isinstance(raw_feeds, list) else []
-    return InstahyreFiltersConfig(
-        search_urls=list(urls) if isinstance(urls, list) else [str(urls)] if urls else [],
-        feeds=feeds,
-        job_functions=list(data.get("job_functions", [])),
-        locations=list(data.get("locations", [])),
-        experience_years=data.get("experience_years"),
-        company_size=str(data.get("company_size", "All")),
-        default_skills=str(data.get("default_skills", "")),
-        job_function_aliases=_str_str_map(data.get("job_function_aliases")),
-        skill_chip_values=_str_str_map(data.get("skill_chip_values")),
-        skill_type_queries=_str_str_map(data.get("skill_type_queries")),
-    )
-
-
-def _platform_config(
+def _platform_runtime_config(
     raw: dict[str, Any],
     key: str,
     *,
     default_cookies: str,
     filter_fn,
     enabled_default: bool = True,
-) -> PlatformConfig:
+) -> PlatformRuntimeConfig:
+    """Generic replacement for the pre-refactor hand-written per-platform
+    ``_platform_config(raw, "naukri", default_cookies=..., filter_fn=_naukri_filters)``
+    call sites — same parsing behavior (including the "section missing → disabled,
+    filters parsed from an empty dict so every default still applies" branch),
+    just parameterized by whichever ``filter_fn``/``default_cookies`` the caller
+    (now the auto-discovered ``PlatformSpec``) provides instead of one hardcoded
+    function per platform.
+    """
     section = _section(raw, key)
     if not section:
-        return PlatformConfig(enabled=False, cookies_file=default_cookies, filters=filter_fn({}))
-    return PlatformConfig(
+        return PlatformRuntimeConfig(enabled=False, cookies_file=default_cookies, filters=filter_fn({}))
+    return PlatformRuntimeConfig(
         enabled=bool(section.get("enabled", enabled_default)),
         cookies_file=str(section.get("cookies_file", default_cookies)),
         filters=filter_fn(_section(section, "filters") or section),
@@ -1006,58 +803,41 @@ def load_config(path: Path) -> AppConfig:
         ),
     )
 
-    # Legacy flat config (wellfound-only)
-    if "wellfound" not in raw and "cookies" in raw:
-        legacy_cookies = str(_section(raw, "cookies").get("file", "cookies.json"))
-        wellfound = PlatformConfig(
-            enabled=True,
-            cookies_file=legacy_cookies,
-            filters=_wellfound_filters(_section(raw, "filters")),
-        )
-        uplers = _platform_config(
-            raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters, enabled_default=False
-        )
-        naukri = _platform_config(
-            raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters, enabled_default=False
-        )
-        hirist = _platform_config(
-            raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters, enabled_default=False
-        )
-        instahyre = _platform_config(
+    # Which platform keys to look for in the YAML, and which dataclass to parse
+    # each one's `filters:` block into, come from the auto-discovered PlatformSpec
+    # registry (platform_adapter.discover_platforms()) instead of a hardcoded
+    # per-platform if/elif chain — this is what lets platform #8 add itself to
+    # config parsing just by existing as a package with `PLATFORM = PlatformSpec(...)`.
+    # Imported lazily (not at module top) because platform_adapter.py's discovery
+    # scan imports every platform package, and those packages import AppConfig
+    # from *this* module — importing it eagerly at module scope would deadlock
+    # the two modules on each other mid-definition.
+    from .platform_adapter import discover_platforms
+
+    specs = discover_platforms()
+
+    # Legacy flat config (wellfound-only): the original tool's config.yaml had a
+    # top-level `cookies:` section instead of a `wellfound:` block, and every
+    # *other* platform defaulted to disabled (they didn't exist yet when this
+    # format was current). Preserved byte-for-byte for old configs still using it.
+    legacy_flat = "wellfound" not in raw and "cookies" in raw
+
+    platforms: dict[str, PlatformRuntimeConfig] = {}
+    for name, spec in specs.items():
+        if legacy_flat and name == "wellfound":
+            platforms["wellfound"] = PlatformRuntimeConfig(
+                enabled=True,
+                cookies_file=str(_section(raw, "cookies").get("file", "cookies.json")),
+                filters=spec.parse_filters(_section(raw, "filters")),
+            )
+            continue
+        platforms[name] = _platform_runtime_config(
             raw,
-            "instahyre",
-            default_cookies="cookies.instahyre.json",
-            filter_fn=_instahyre_filters,
-            enabled_default=False,
+            name,
+            default_cookies=spec.default_cookies_file,
+            filter_fn=spec.parse_filters,
+            enabled_default=(spec.filters_enabled_default if not legacy_flat else False),
         )
-        cutshort = _platform_config(
-            raw,
-            "cutshort",
-            default_cookies="cookies.cutshort.json",
-            filter_fn=_cutshort_filters,
-            enabled_default=False,
-        )
-        indeed = _platform_config(
-            raw,
-            "indeed",
-            default_cookies="cookies.indeed.json",
-            filter_fn=_indeed_filters,
-            enabled_default=False,
-        )
-    else:
-        wellfound = _platform_config(
-            raw, "wellfound", default_cookies="cookies.wellfound.json", filter_fn=_wellfound_filters
-        )
-        uplers = _platform_config(raw, "uplers", default_cookies="cookies.uplers.json", filter_fn=_uplers_filters)
-        naukri = _platform_config(raw, "naukri", default_cookies="cookies.naukri.json", filter_fn=_naukri_filters)
-        hirist = _platform_config(raw, "hirist", default_cookies="cookies.hirist.json", filter_fn=_hirist_filters)
-        instahyre = _platform_config(
-            raw, "instahyre", default_cookies="cookies.instahyre.json", filter_fn=_instahyre_filters
-        )
-        cutshort = _platform_config(
-            raw, "cutshort", default_cookies="cookies.cutshort.json", filter_fn=_cutshort_filters
-        )
-        indeed = _platform_config(raw, "indeed", default_cookies="cookies.indeed.json", filter_fn=_indeed_filters)
 
     config = AppConfig(
         user=_user_config(user),
@@ -1073,13 +853,7 @@ def load_config(path: Path) -> AppConfig:
         compensation=compensation,
         cover_letter=cover_letter,
         cover_note=str(raw.get("cover_note", "")).strip(),
-        wellfound=wellfound,
-        uplers=uplers,
-        naukri=naukri,
-        hirist=hirist,
-        instahyre=instahyre,
-        cutshort=cutshort,
-        indeed=indeed,
+        platforms=platforms,
         workday=workday,
         llm=llm,
         whatsapp=whatsapp,
