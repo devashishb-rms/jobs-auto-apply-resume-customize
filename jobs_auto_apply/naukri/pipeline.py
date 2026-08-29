@@ -29,7 +29,7 @@ async def run_naukri_pipeline(
     Scroll/collect on the main SRP tab; worker tabs apply from a shared queue.
     Frees workers to pick up new listings without waiting for the whole batch.
     """
-    filters = config.naukri.filters
+    filters = config.platforms["naukri"].filters
     workers_n = max(1, config.application.naukri_apply_workers)
     per_batch_limit = scrape_limit(config.application.max_jobs_per_run, multiplier=3)
     max_batches = max(1, filters.max_pages)

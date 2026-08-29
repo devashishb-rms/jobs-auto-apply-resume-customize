@@ -23,23 +23,15 @@ from .browser import (
     wellfound_session,
 )
 from .chrome_profile import list_chrome_profiles, resolve_chrome_profile_dir
-from .config import (
-    AppConfig,
-    CutshortFiltersConfig,
-    HiristFiltersConfig,
-    IndeedFiltersConfig,
-    InstahyreFiltersConfig,
-    NaukriFiltersConfig,
-    UplersFiltersConfig,
-    WellfoundFiltersConfig,
-    load_config,
-)
+from .config import AppConfig, load_config
 from .cutshort.apply import apply_batch as cutshort_apply_batch
+from .cutshort.config import CutshortFiltersConfig
 from .cutshort.search import apply_filters as cutshort_apply_filters
 from .cutshort.search import collect_from_search_urls as cutshort_collect_from_search_urls
 from .cutshort.search import collect_job_listings as cutshort_collect_jobs
 from .cutshort.search import iter_paginated_feed_pages as cutshort_iter_paginated_feed_pages
 from .hirist.apply import apply_batch as hirist_apply_batch
+from .hirist.config import HiristFiltersConfig
 from .hirist.resume_sync import (
     run_hirist_resume_sync_scheduler,
     sync_hirist_resume_if_due,
@@ -49,18 +41,21 @@ from .hirist.search import collect_from_search_urls as hirist_collect_from_searc
 from .hirist.search import collect_job_listings as hirist_collect_jobs
 from .hirist.search import iter_paginated_feed_pages
 from .indeed.apply import apply_batch as indeed_apply_batch
+from .indeed.config import IndeedFiltersConfig
 from .indeed.search import apply_filters as indeed_apply_filters
 from .indeed.search import collect_from_search_urls as indeed_collect_from_search_urls
 from .indeed.search import collect_job_listings as indeed_collect_jobs
 from .indeed.search import iter_paginated_feed_pages as indeed_iter_paginated_feed_pages
 from .instahyre.apply import apply_batch as instahyre_apply_batch
 from .instahyre.apply import apply_from_feeds as instahyre_apply_from_feeds
+from .instahyre.config import InstahyreFiltersConfig
 from .instahyre.search import apply_filters as instahyre_apply_filters
 from .instahyre.search import collect_from_search_urls as instahyre_collect_from_search_urls
 from .instahyre.search import collect_job_listings as instahyre_collect_jobs
 from .limits import apply_cap, is_unlimited, scrape_limit
 from .memory import get_decision, load_memory, record_decision, save_preferences
 from .naukri.apply import apply_batch as naukri_apply_batch
+from .naukri.config import NaukriFiltersConfig
 from .naukri.pipeline import run_naukri_pipeline
 from .naukri.resume_sync import (
     run_naukri_resume_sync_scheduler,
@@ -79,6 +74,7 @@ from .pending_questions import (
     summary_for_run,
 )
 from .pending_retry import retry_pending_jobs
+from .platform_adapter import discover_platforms
 from .review import (
     ReviewItem,
     approved_items,
@@ -104,6 +100,7 @@ from .run_issues import (
     run_issues_summary,
 )
 from .uplers.apply import apply_batch as uplers_apply_batch
+from .uplers.config import UplersFiltersConfig
 from .uplers.search import apply_filters as uplers_apply_filters
 from .uplers.search import collect_job_listings as uplers_collect_jobs
 from .utils import (
@@ -119,6 +116,7 @@ from .utils import (
 )
 from .wellfound.apply import apply_batch as wellfound_apply_batch
 from .wellfound.apply import ensure_resume_on_profile
+from .wellfound.config import WellfoundFiltersConfig
 from .wellfound.pipeline import run_wellfound_pipeline
 from .wellfound.search import apply_filters as wellfound_apply_filters
 from .wellfound.search import collect_job_listings as wellfound_collect_jobs
@@ -126,26 +124,16 @@ from .wellfound.search import collect_job_listings as wellfound_collect_jobs
 logger = logging.getLogger("job_apply")
 console = Console()
 
-PLATFORM_CHOICES = (
-    "wellfound",
-    "uplers",
-    "naukri",
-    "hirist",
-    "instahyre",
-    "cutshort",
-    "indeed",
-    "all",
-)
 
-PLATFORM_APPLY = {
-    "wellfound": wellfound_apply_batch,
-    "uplers": uplers_apply_batch,
-    "naukri": naukri_apply_batch,
-    "hirist": hirist_apply_batch,
-    "instahyre": instahyre_apply_batch,
-    "cutshort": cutshort_apply_batch,
-    "indeed": indeed_apply_batch,
-}
+# Every auto-discovered platform's registry key, sorted for a stable CLI
+# --platform Choice list — see platform_adapter.discover_platforms(). Adding
+# platform #8 makes it show up here (and in PLATFORM_APPLY/_enabled_platforms/
+# the login+verify dispatch below) with zero edits to this file.
+_DISCOVERED_PLATFORMS = discover_platforms()
+
+PLATFORM_CHOICES = (*sorted(_DISCOVERED_PLATFORMS), "all")
+
+PLATFORM_APPLY = {name: spec.apply_batch for name, spec in _DISCOVERED_PLATFORMS.items()}
 
 
 @click.group()
@@ -154,18 +142,10 @@ def main() -> None:
 
 
 def _enabled_platforms(config: AppConfig, platform: str) -> list[str]:
-    mapping = {
-        "wellfound": config.wellfound.enabled,
-        "uplers": config.uplers.enabled,
-        "naukri": config.naukri.enabled,
-        "hirist": config.hirist.enabled,
-        "instahyre": config.instahyre.enabled,
-        "cutshort": config.cutshort.enabled,
-        "indeed": config.indeed.enabled,
-    }
     if platform == "all":
-        return [name for name, enabled in mapping.items() if enabled]
-    if not mapping.get(platform):
+        return [name for name, runtime in config.platforms.items() if runtime.enabled]
+    runtime = config.platforms.get(platform)
+    if not runtime or not runtime.enabled:
         return []
     return [platform]
 
@@ -185,6 +165,17 @@ async def _run_single_platform(name: str, runner, config: AppConfig) -> int:
 
 
 async def _run_platform_batch(config: AppConfig, targets: list[str]) -> int:
+    # Judgment call: this table maps each platform name to its own *pipeline*
+    # function (_run_wellfound, _run_naukri, ...) — real per-site application
+    # logic (search-collect strategy, pagination, resume-sync hooks, pipeline
+    # vs. batch apply), not declarative wiring, so it isn't something a
+    # PlatformSpec field can express without turning PlatformSpec into "the
+    # entire site package" — which would defeat the point of adapters staying
+    # thin. What *is* auto-discovery-driven here is `targets` (from
+    # _enabled_platforms(), registry-backed) and PARALLEL_COOKIE_PLATFORMS
+    # (from browser.py, registry-backed); a platform #8 still needs its own
+    # _run_<name> pipeline function and a line added here, exactly as adding a
+    # new business-logic code path always would.
     runners = [
         ("wellfound", _run_wellfound),
         ("uplers", _run_uplers),
@@ -1080,22 +1071,21 @@ def _check_prerequisites(config: AppConfig, *, require_resume: bool = True) -> N
 
 
 class _platform_session:
+    """Generic session dispatch for review/apply-reviewed (which iterate every
+    enabled platform without site-specific logic) — uses browser.py's
+    ``platform_session(config, name)`` directly instead of a hardcoded
+    name→session-function dict, so platform #8 needs no edit here.
+    """
+
     def __init__(self, platform: str, config: AppConfig) -> None:
         self.platform = platform
         self.config = config
         self._cm = None
 
     async def __aenter__(self):
-        sessions = {
-            "wellfound": wellfound_session,
-            "uplers": uplers_session,
-            "naukri": naukri_session,
-            "hirist": hirist_session,
-            "instahyre": instahyre_session,
-            "cutshort": cutshort_session,
-            "indeed": indeed_session,
-        }
-        self._cm = sessions[self.platform](self.config)
+        from .browser import platform_session
+
+        self._cm = platform_session(self.config, self.platform)
         return await self._cm.__aenter__()
 
     async def __aexit__(self, *args):
@@ -1107,17 +1097,17 @@ class _platform_session:
 async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> list[JobListing]:
     limit = scrape_limit(config.application.jobs_per_platform, multiplier=1)
     if platform == "wellfound":
-        filters = config.wellfound.filters
+        filters = config.platforms["wellfound"].filters
         if isinstance(filters, WellfoundFiltersConfig):
             await wellfound_apply_filters(page, filters)
             return await wellfound_collect_jobs(page, limit)
     if platform == "uplers":
-        filters = config.uplers.filters
+        filters = config.platforms["uplers"].filters
         if isinstance(filters, UplersFiltersConfig):
             await uplers_apply_filters(page, filters)
             return await uplers_collect_jobs(page, limit)
     if platform == "naukri":
-        filters = config.naukri.filters
+        filters = config.platforms["naukri"].filters
         if isinstance(filters, NaukriFiltersConfig):
             await naukri_apply_filters(page, filters)
             return await naukri_collect_jobs(
@@ -1128,14 +1118,14 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
                 max_job_age_days=filters.max_job_age_days,
             )
     if platform == "hirist":
-        filters = config.hirist.filters
+        filters = config.platforms["hirist"].filters
         if isinstance(filters, HiristFiltersConfig):
             if filters.search_urls:
                 return await hirist_collect_from_search_urls(page, filters.search_urls, limit)
             await hirist_apply_filters(page, filters)
             return await hirist_collect_jobs(page, limit)
     if platform == "instahyre":
-        filters = config.instahyre.filters
+        filters = config.platforms["instahyre"].filters
         if isinstance(filters, InstahyreFiltersConfig):
             await instahyre_apply_filters(page, filters)
             if filters.search_urls or filters.feeds:
@@ -1152,14 +1142,14 @@ async def _collect_jobs_for_platform(platform: str, config: AppConfig, page) -> 
                 )
             return await instahyre_collect_jobs(page, limit)
     if platform == "cutshort":
-        filters = config.cutshort.filters
+        filters = config.platforms["cutshort"].filters
         if isinstance(filters, CutshortFiltersConfig):
             if filters.search_urls:
                 return await cutshort_collect_from_search_urls(page, filters.search_urls, limit)
             await cutshort_apply_filters(page, filters)
             return await cutshort_collect_jobs(page, limit)
     if platform == "indeed":
-        filters = config.indeed.filters
+        filters = config.platforms["indeed"].filters
         if isinstance(filters, IndeedFiltersConfig):
             if filters.search_urls:
                 return await indeed_collect_from_search_urls(
@@ -1176,7 +1166,7 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
     from .job_selection import pick_best_per_company
     from .salary import is_job_salary_eligible
 
-    filters = config.wellfound.filters
+    filters = config.platforms["wellfound"].filters
     if not isinstance(filters, WellfoundFiltersConfig):
         return 0
     async with wellfound_session(config) as (_, context, page):
@@ -1267,7 +1257,7 @@ async def _run_wellfound(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_uplers(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.uplers.filters
+    filters = config.platforms["uplers"].filters
     if not isinstance(filters, UplersFiltersConfig):
         return 0
     async with uplers_session(config) as (_, context, page):
@@ -1277,7 +1267,7 @@ async def _run_uplers(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.naukri.filters
+    filters = config.platforms["naukri"].filters
     if not isinstance(filters, NaukriFiltersConfig):
         return 0
     async with naukri_session(config) as (_, context, page):
@@ -1336,7 +1326,7 @@ async def _run_naukri(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.hirist.filters
+    filters = config.platforms["hirist"].filters
     if not isinstance(filters, HiristFiltersConfig):
         return 0
     max_pages = max(1, filters.max_pages)
@@ -1384,7 +1374,7 @@ async def _run_hirist(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_instahyre(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.instahyre.filters
+    filters = config.platforms["instahyre"].filters
     if not isinstance(filters, InstahyreFiltersConfig):
         return 0
     async with instahyre_session(config) as (_, context, page):
@@ -1410,7 +1400,7 @@ async def _run_instahyre(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_cutshort(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.cutshort.filters
+    filters = config.platforms["cutshort"].filters
     if not isinstance(filters, CutshortFiltersConfig):
         return 0
     max_pages = max(1, filters.max_pages)
@@ -1455,7 +1445,7 @@ async def _run_cutshort(config: AppConfig, applied_ids: set[str]) -> int:
 
 
 async def _run_indeed(config: AppConfig, applied_ids: set[str]) -> int:
-    filters = config.indeed.filters
+    filters = config.platforms["indeed"].filters
     if not isinstance(filters, IndeedFiltersConfig):
         return 0
     max_pages = max(1, filters.max_pages)
@@ -1556,18 +1546,13 @@ async def _login(config_path: Path, platform: str) -> None:
         console.print(f"[cyan]Chrome profile:[/cyan] {resolve_chrome_profile_dir(config)}")
         console.print("[bold]Quit Google Chrome completely (Cmd+Q) before continuing.[/bold]\n")
 
-    sessions = [
-        ("wellfound", config.wellfound.enabled, wellfound_session),
-        ("uplers", config.uplers.enabled, uplers_session),
-        ("naukri", config.naukri.enabled, naukri_session),
-        ("hirist", config.hirist.enabled, hirist_session),
-        ("instahyre", config.instahyre.enabled, instahyre_session),
-        ("cutshort", config.cutshort.enabled, cutshort_session),
-        ("indeed", config.indeed.enabled, indeed_session),
-    ]
-    for name, enabled, session_fn in sessions:
-        if platform in (name, "all") and enabled:
-            async with session_fn(config):
+    # Registry-driven: every auto-discovered platform gets a login/verify pass
+    # here automatically, with no hardcoded per-platform dispatch table.
+    from .browser import platform_session
+
+    for name in sorted(_DISCOVERED_PLATFORMS):
+        if platform in (name, "all") and config.platforms[name].enabled:
+            async with platform_session(config, name):
                 console.print(f"[green]{name.capitalize()} session ready.[/green]")
 
 

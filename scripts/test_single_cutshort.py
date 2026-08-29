@@ -14,13 +14,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from jobs_auto_apply.browser import cutshort_session
-from jobs_auto_apply.config import CutshortFiltersConfig, load_config
+from jobs_auto_apply.config import load_config
 from jobs_auto_apply.cutshort.apply import (
     _already_applied,
     _click_apply,
     _wait_for_apply_button,
     goto_cutshort_job_detail,
 )
+from jobs_auto_apply.cutshort.config import CutshortFiltersConfig
 from jobs_auto_apply.cutshort.search import collect_job_listings, feed_urls
 from jobs_auto_apply.page_load import goto_settled
 from jobs_auto_apply.utils import setup_logging
@@ -33,7 +34,7 @@ async def main() -> None:
 
     async with cutshort_session(config) as (_browser, _context, page):
         if not cli_urls:
-            filters = config.cutshort.filters
+            filters = config.platforms["cutshort"].filters
             if not isinstance(filters, CutshortFiltersConfig):
                 print("Cutshort filters missing in config.yaml")
                 return

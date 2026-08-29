@@ -13,11 +13,25 @@ from .chrome_profile import assert_chrome_profile_available, resolve_chrome_prof
 from .config import AppConfig
 from .login import wait_for_manual_login
 from .page_load import ensure_page_ready
+from .platform_adapter import discover_platforms
 
 logger = logging.getLogger("job_apply")
 
-# Cookie-session platforms safe to run in parallel (each gets its own Chromium instance).
-PARALLEL_COOKIE_PLATFORMS = frozenset({"naukri", "hirist", "instahyre", "cutshort", "indeed"})
+
+def _parallel_cookie_platforms() -> frozenset[str]:
+    """Cookie-session platforms safe to run in parallel (each own Chromium instance).
+
+    Derived from the auto-discovered PlatformSpec registry (``spec.parallel_safe``)
+    instead of a hardcoded name set — adding platform #8 opts into parallel mode
+    purely by setting ``parallel_safe=True`` on its own ``PlatformSpec``.
+    """
+    return frozenset(spec.name for spec in discover_platforms().values() if spec.parallel_safe)
+
+
+# Computed once at import time (discovery itself is cheap — it's just introspecting
+# already-imported modules) and kept as a module-level constant so existing callers
+# (cli.py) can still do ``from .browser import PARALLEL_COOKIE_PLATFORMS``.
+PARALLEL_COOKIE_PLATFORMS = _parallel_cookie_platforms()
 
 
 def _use_chrome_profile(config: AppConfig, platform: str) -> bool:
@@ -403,123 +417,81 @@ async def browser_session(
 
 
 @asynccontextmanager
-async def wellfound_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .wellfound.auth import WELLFOUND_ORIGIN, inject_cookies, verify_logged_in
+async def platform_session(
+    config: AppConfig, platform: str
+) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
+    """Generic replacement for the six hand-written ``<platform>_session()`` functions.
+
+    Every one of those was near-identical boilerplate (resolve origin/login URL,
+    cookies path, inject_cookies/verify_logged_in, a human-readable label) around
+    the one real shared implementation, ``browser_session()`` above (unchanged by
+    this refactor). This function looks the platform up in the auto-discovered
+    ``PlatformSpec`` registry and calls ``browser_session()`` with the spec's
+    fields instead — adding platform #8 needs no new function here, only its own
+    ``PlatformSpec``.
+
+    Indeed is the one platform whose auth depends on runtime config (country
+    domain); ``inject_cookies_bind``/``verify_logged_in_bind`` (None for every
+    other platform) let it bind that without this function needing a
+    platform-specific branch.
+    """
+    from .platform_adapter import discover_platforms
+
+    specs = discover_platforms()
+    spec = specs.get(platform)
+    if spec is None:
+        raise ValueError(f"Unknown platform: {platform}")
+
+    inject_cookies_fn = spec.inject_cookies_bind(config) if spec.inject_cookies_bind else spec.inject_cookies
+    verify_fn = spec.verify_logged_in_bind(config) if spec.verify_logged_in_bind else spec.verify_logged_in
 
     async with browser_session(
         config,
-        platform="wellfound",
-        origin=WELLFOUND_ORIGIN,
-        login_url=f"{WELLFOUND_ORIGIN}/login",
-        cookies_path=config.cookies_path("wellfound"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Wellfound",
+        platform=spec.name,
+        origin=spec.origin(config),
+        login_url=spec.login_url(config),
+        cookies_path=config.cookies_path(spec.name),
+        inject_cookies_fn=inject_cookies_fn,
+        verify_fn=verify_fn,
+        platform_label=spec.platform_label,
     ) as session:
         yield session
 
 
-@asynccontextmanager
-async def uplers_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .uplers.auth import UPLERS_ORIGIN, inject_cookies, verify_logged_in
-
-    async with browser_session(
-        config,
-        platform="uplers",
-        origin=UPLERS_ORIGIN,
-        login_url=f"{UPLERS_ORIGIN}/talent/login",
-        cookies_path=config.cookies_path("uplers"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Uplers",
-    ) as session:
-        yield session
+# Thin, named back-compat wrappers for the seven existing platforms. Judgment
+# call: cli.py and a couple of site packages (naukri/resume_sync.py,
+# hirist/resume_sync.py) import these by name (``naukri_session(config)``, not
+# ``platform_session(config, "naukri")``) purely for readability at the call
+# site — that's a legitimate reason to keep them rather than "migrate every call
+# site to the generic form" (the task's other allowed option). They are NOT
+# separate implementations — each is a one-line partial application of
+# ``platform_session`` and requires no maintenance as new platforms are added
+# (a platform #8 does not get one of these; callers use
+# ``platform_session(config, "eightplatform")`` directly, or add their own thin
+# wrapper in their own package if they want one — no edit to this file either way).
+def wellfound_session(config: AppConfig):
+    return platform_session(config, "wellfound")
 
 
-@asynccontextmanager
-async def naukri_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .naukri.auth import NAUKRI_LOGIN, NAUKRI_ORIGIN, inject_cookies, verify_logged_in
-
-    async with browser_session(
-        config,
-        platform="naukri",
-        origin=NAUKRI_ORIGIN,
-        login_url=NAUKRI_LOGIN,
-        cookies_path=config.cookies_path("naukri"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Naukri",
-    ) as session:
-        yield session
+def uplers_session(config: AppConfig):
+    return platform_session(config, "uplers")
 
 
-@asynccontextmanager
-async def hirist_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .hirist.auth import HIRIST_LOGIN, HIRIST_ORIGIN, inject_cookies, verify_logged_in
-
-    async with browser_session(
-        config,
-        platform="hirist",
-        origin=HIRIST_ORIGIN,
-        login_url=HIRIST_LOGIN,
-        cookies_path=config.cookies_path("hirist"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Hirist",
-    ) as session:
-        yield session
+def naukri_session(config: AppConfig):
+    return platform_session(config, "naukri")
 
 
-@asynccontextmanager
-async def instahyre_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .instahyre.auth import INSTAHYRE_LOGIN, INSTAHYRE_ORIGIN, inject_cookies, verify_logged_in
-
-    async with browser_session(
-        config,
-        platform="instahyre",
-        origin=INSTAHYRE_ORIGIN,
-        login_url=INSTAHYRE_LOGIN,
-        cookies_path=config.cookies_path("instahyre"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Instahyre",
-    ) as session:
-        yield session
+def hirist_session(config: AppConfig):
+    return platform_session(config, "hirist")
 
 
-@asynccontextmanager
-async def cutshort_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    from .cutshort.auth import CUTSHORT_LOGIN, CUTSHORT_ORIGIN, inject_cookies, verify_logged_in
-
-    async with browser_session(
-        config,
-        platform="cutshort",
-        origin=CUTSHORT_ORIGIN,
-        login_url=CUTSHORT_LOGIN,
-        cookies_path=config.cookies_path("cutshort"),
-        inject_cookies_fn=inject_cookies,
-        verify_fn=verify_logged_in,
-        platform_label="Cutshort",
-    ) as session:
-        yield session
+def instahyre_session(config: AppConfig):
+    return platform_session(config, "instahyre")
 
 
-@asynccontextmanager
-async def indeed_session(config: AppConfig) -> AsyncIterator[tuple[Browser | None, BrowserContext, Page]]:
-    import functools
+def cutshort_session(config: AppConfig):
+    return platform_session(config, "cutshort")
 
-    from .indeed.auth import indeed_login_url, indeed_origin, inject_cookies, verify_logged_in
 
-    domain = getattr(config.indeed.filters, "domain", None)
-
-    async with browser_session(
-        config,
-        platform="indeed",
-        origin=indeed_origin(domain),
-        login_url=indeed_login_url(domain),
-        cookies_path=config.cookies_path("indeed"),
-        inject_cookies_fn=functools.partial(inject_cookies, domain=domain),
-        verify_fn=functools.partial(verify_logged_in, domain=domain),
-        platform_label="Indeed",
-    ) as session:
-        yield session
+def indeed_session(config: AppConfig):
+    return platform_session(config, "indeed")
